@@ -19,7 +19,11 @@ public enum Dialect {
 
     MYSQL   ("CURRENT_TIMESTAMP + INTERVAL ? SECOND",          "LIMIT 1"),
 
-    POSTGRES("CURRENT_TIMESTAMP + (? * interval '1 second')",  "FETCH FIRST 1 ROWS ONLY"),
+    // The cast is not decoration: PostgreSQL infers a parameter's type from
+    // its context, and "? * interval" leaves it ambiguous enough that the
+    // driver can report "could not determine data type of parameter".
+    POSTGRES("CURRENT_TIMESTAMP + (CAST(? AS integer) * interval '1 second')",
+                                                               "FETCH FIRST 1 ROWS ONLY"),
 
     ORACLE  ("SYSTIMESTAMP + NUMTODSINTERVAL(?, 'SECOND')",    "FETCH FIRST 1 ROWS ONLY"),
 

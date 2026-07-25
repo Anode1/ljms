@@ -102,8 +102,8 @@ Why recovery is by lease and not by owner:
 Delivery is at-least-once:
   A worker that is slow rather than dead can lose its lease and have the task
   run twice. Tasks must be idempotent, or fence themselves with
-  QueueDAO.extendLease(), which returns 0 once the lease is gone. queue.lease_seconds
-  must exceed the longest task, or that task must call touch() as it goes.
+  extendLease(), which returns 0 once the lease is gone. Processor.leaseSeconds
+  must exceed the longest task, or the task must extend it as it goes.
 
 States are names, not codes:
   Every status column in this schema is a readable VARCHAR, and one symbol runs
