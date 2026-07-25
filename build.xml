@@ -6,6 +6,7 @@
     ant prove                              check the state machine (no database)
     ant test                               the behaviour and race tests
                                            (set the constants at the top of QueueTests first)
+    ant bench                              reproduce the throughput numbers in the README
 
   No Maven, no dependency resolution, no plugins. The only jar involved is
   junit, vendored in lib/, and it is needed only by the tests. LJMS itself
@@ -54,6 +55,13 @@
 		</java>
 	</target>
 
+	<target name="bench" depends="compile-tests"
+			description="Throughput measurement (set the DB constants in Bench.java; creates and drops its table)">
+		<java classname="org.ljms.Bench" failonerror="true" fork="true">
+			<classpath refid="test.classpath" />
+		</java>
+	</target>
+
 	<target name="jar" depends="compile" description="Package build/ as ljms.jar (optional; copying the source is the point)">
 		<jar jarfile="ljms.jar" basedir="${build}" excludes="**/*Test*.class" />
 	</target>
@@ -67,6 +75,7 @@
 		<echo>ant           compile</echo>
 		<echo>ant prove     check the state machine (no database)</echo>
 		<echo>ant test      behaviour + race tests (edit the DB constants in test/org/ljms/QueueTests.java)</echo>
+		<echo>ant bench     throughput measurement (edit the DB constants in test/org/ljms/Bench.java)</echo>
 		<echo>ant jar       optional packaging</echo>
 	</target>
 

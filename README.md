@@ -109,24 +109,26 @@ This is why you can run as many workers as you like. Contention costs wasted att
 
 ## Performance
 
-Measured on an unremarkable laptop against local MySQL 8, one task = one `SELECT` + two `UPDATE`s:
+Reproducible, not asserted — `ant bench` runs this on your own hardware. One task here is `take()` + `done()`: one SELECT and two UPDATEs, with no work in between, so these are the queue's own overhead and nothing else.
 
-| workers | tasks/sec | ms/task |
+Intel i7-1165G7, MySQL 8.0.46, JDK 21, local SSD, default `innodb_flush_log_at_trx_commit=1`:
+
+| workers | tasks/sec (direct) | tasks/sec (pooled) |
 | --- | --- | --- |
-| 1, no pool | 78 | 12.8 |
-| 1, pooled | 194 | 5.2 |
-| 4, pooled | 246 | 4.1 |
-| 8, pooled | 152 | 6.6 |
+| 1 | 83 | 269 |
+| 2 | 179 | 394 |
+| 4 | 291 | **412** |
+| 8 | 295 | 365 |
 
-Three things that table tells you, and they are more useful than the absolute numbers:
+Three things that table says, more useful than the numbers themselves:
 
-**Connection setup dominates if you let it.** A bare `DriverManager` connect costs ~10 ms here, and LJMS opens one per operation, so an unpooled `Connections` spends more time connecting than queueing. Handing it a pooled one is a one-line lambda and 2.5× the throughput. That is why `Connections` is an interface and not a URL.
+**Connection setup dominates if you let it.** A bare `DriverManager` connect costs ~11 ms here, and LJMS opens one per operation. Handing it a pooled `Connections` is a one-line lambda and roughly triples throughput. That is why `Connections` is an interface and not a URL.
 
-**The floor is durability, not SQL.** Even pooled, ~5 ms per task is mostly two commits — the claim and the outcome — and a commit is an fsync. You cannot go below two durable writes per task and still know, after a crash, whether the task ran. Batching the claim (take N at once, one commit) is the escape hatch if you ever need it, and it trades exactly that knowledge.
+**The floor is durability, not SQL.** Even pooled, ~2.4 ms per task is mostly two commits — the claim and the outcome — and a commit is an fsync. You cannot go below two durable writes per task and still know, after a crash, whether the task ran. Batching claims (take N, one commit) is the only real lever, and it trades exactly that knowledge.
 
-**Contention costs, but does not collapse.** Eight workers are slower than four: they read the same head row, seven lose the compare-and-swap and retry. That is the wasted-attempt cost, and it is the good failure mode — throughput sags, nothing blocks, nothing times out, nothing cascades. A `SELECT ... FOR UPDATE` design does not sag there; it falls over.
+**Contention costs, but does not collapse.** Eight workers are slower than four: they read the same head row, and the losers retry. Throughput sags; nothing blocks, nothing times out, nothing cascades. A design that holds a lock across the work does not sag there — it falls over, and only in production.
 
-If you need thousands of tasks a second, this is the wrong tool and a broker is the right one. If you need hundreds, this is a table.
+If you need thousands of tasks a second, use a broker. If you need hundreds, this is a table.
 
 ## When it fits
 
@@ -170,9 +172,10 @@ MySQL, PostgreSQL, Oracle and SQL Server ship in `Dialect`. Everything else is p
 
 ```
 src/          the six files you copy
-test/         StateMachineTest (the prover), QueueTests (behaviour + race)
+test/         StateMachineTest (the prover), QueueTests (behaviour + race), Bench
 sql/          mysql.sql, postgres.sql, oracle.sql
-doc/          Queue_States.txt — the specification the prover reads
+doc/          Queue_States.txt  — the specification the prover reads
+              development.txt   — internals, invariants, porting, design notes
 legacy/       the original LJMS: a P2P light queue, kept for its history
 queue.sh      start | run | stop | status
 ```
@@ -182,6 +185,14 @@ Run the tests against a **scratch** database — they drop and recreate the tabl
 ```sh
 ant test        # after setting the DB constants at the top of QueueTests.java
 ```
+
+## History
+
+The first LJMS, in 2001, was a small open-source library with an in-memory queue. Different mechanism entirely — the queue lived in the process — but the same idea: a unit of work carries its own state, and whichever worker is free takes the next one. It happened to predate Sun's JMS, which is where the name came from; it is kept here for continuity, not as any sort of claim. That original is in [`legacy/`](legacy/).
+
+The idea has since carried four production systems, and this is the fourth pass at it: the version that moves the queue into a table, where it survives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. What is new here is the lease, the portable SQL, the specification with a prover, and the tests — writing which found real bugs in both the ancestors and this rewrite.
+
+The shape is much older than any of it. A mainframe job queue — JES on z/OS — does the same thing: work sits on a queue in an explicit state, an operator can see it, a failed job is *held* for a person rather than retried blindly, and killing the address space loses nothing because the state of the work is data rather than process memory. That last property is most of why those systems are so hard to kill, and it is the one worth copying. Everything that loses work on restart — in-memory queues, actor mailboxes, thread pools — keeps the state of the work inside the process doing the work.
 
 ## Related
 
