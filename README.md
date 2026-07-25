@@ -292,21 +292,23 @@ Those queues die with the JVM. This one survives a restart, a crash and a machin
 **Is polling not wasteful?**
 Somewhat, and that is the trade. A broker lets you block in the kernel until a message arrives, and so does a file. [`iac`](https://github.com/Anode1/iac) is the same author's message queue and does exactly that, parked on an `inotify` watch at zero CPU until a peer appends. A database table gives you no such handle, so a worker has to ask. PostgreSQL does have `LISTEN`/`NOTIFY` and Oracle has AQ; LJMS uses neither, because each would be another vendor-specific path and a listener to keep alive. What you pay is one indexed `SELECT` per worker per interval. What you get is no listener, no reconnect logic, no message lost on a dropped connection, and a worker you can `kill -9` without losing the task: it is re-run once its lease expires.
 
+If the interval ever does become the problem, the wakeup can be added without changing anything above. Have whatever enqueues a task also poke a file or an `iac` room, and have the worker block on that instead of sleeping, keeping the poll as a fallback. The part that matters is which of the two is authoritative: the table stays the record of truth and the notification is only a hint, so a lost wakeup costs latency and never a task. Do it the other way round, with the notification load-bearing, and you have built a message queue with a database attached, plus every delivery guarantee you now have to provide yourself. Nothing here does this today, and for tasks measured in minutes it would be solving a problem nobody has.
+
 **Only one task at a time per worker?**
 Yes, deliberately: it keeps the machine four states rather than a concurrency model. For more parallelism, start more workers.
 
 **Is it small enough to trust?**
-Small enough to read, which is not the same thing, 1,100 lines is still a couple of hours. And the production history belongs to the ancestors, not to this code. See Status.
+Small enough to read, which is not the same thing. 1,100 lines is still a couple of hours. And the production history belongs to the ancestors, not to this code. See Status.
 
 ## Layout
 
 ```
 src/          the six files you copy
 test/         StateMachineTest (the prover), QueueTests (behaviour + race), Bench
-sql/          mysql · postgres · oracle · mssql
-doc/          Queue_States.txt, the specification the prover reads
-              development.txt , internals, invariants, porting, design notes
-legacy/       about the 2001 original; its source is not published here
+sql/          mysql, postgres, oracle, mssql
+doc/          Queue_States.txt   the specification the prover reads
+              development.txt    internals, invariants, porting, design notes
+legacy/       about the 2001 original. Its source is not published here
 queue.sh      start | run | stop | status
 ```
 
@@ -315,26 +317,26 @@ ant test        # behaviour + race, against a scratch database
 ant bench       # throughput
 ```
 
-Both drop and recreate the table on every run, point them at a database you do not care about.
+Both drop and recreate the table on every run, so point them at a database you do not care about.
 
 ## History
 
 The first LJMS, in 2001, was a small open-source library implementing the JMS interface over an in-memory queue, hence the name. Different mechanism from this one, since the queue lived in the process and did not survive a restart, but the same idea underneath: a unit of work carries its own state, and whichever worker is free takes the next one.
 
-The author has built this shape four times since, in systems that have between them been running for decades, the direct ancestor has processed Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. Every one of them was arranged the way the section above describes: a web tier put the work in and showed each task's status from the same table, while separate worker processes took the tasks and ran them. Long jobs, minutes to hours, with users watching progress on a page.
+The author has built this shape four times since, in systems that have between them been running for decades. The direct ancestor has processed Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. Every one of them was arranged the way the section above describes: a web tier put the work in and showed each task's status from the same table, while separate worker processes took the tasks and ran them. Long jobs, minutes to hours, with users watching progress on a page.
 
 This is the fourth pass at it, and the one that moves the queue into a table where it outlives the process.
 
-The shape it borrows from is JES, the job queue on z/OS, see [Why](#why).
+The shape it borrows from is JES, the job queue on z/OS. See [Why](#why).
 
 ## Related
 
-[**iac**](https://github.com/Anode1/iac), the closest relative: also a queue, of messages between agents on one machine, and also dependency-free plain files with no daemon. It is the interesting contrast, because it can do the thing LJMS cannot. A message board is a file, so a reader can block on `inotify` and be woken by the kernel the moment something lands, zero CPU while it waits. A table is not a file you can watch, so LJMS has to ask. Same instinct, opposite constraint.
+[**iac**](https://github.com/Anode1/iac) is the closest relative: also a queue, of messages between agents on one machine, and also dependency-free plain files with no daemon. It is the interesting contrast, because it can do the thing LJMS cannot. A message board is a file, so a reader can block on `inotify` and be woken by the kernel the moment something lands, at zero CPU while it waits. A table is not a file you can watch, so LJMS has to ask. Same instinct, opposite constraint, and the two compose if the polling interval ever matters (see [Is polling not wasteful?](#questions)).
 
-[**ais**](https://github.com/Anode1/ais), an associative index in plain text. Not a queue; related by disposition rather than mechanism, keep the store readable, own the format, add no engine you have to trust.
+[**ais**](https://github.com/Anode1/ais) is an associative index in plain text. Not a queue; related by disposition rather than mechanism: keep the store readable, own the format, add no engine you have to trust.
 
-[**agent-recipes**](https://github.com/Anode1/agent-recipes), practices for working with coding agents.
+[**agent-recipes**](https://github.com/Anode1/agent-recipes) is a set of practices for working with coding agents.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
