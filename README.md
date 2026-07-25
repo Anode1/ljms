@@ -309,6 +309,9 @@ Somewhat, and that is the trade. A broker lets you block in the kernel until a m
 
 If the interval ever does become the problem, the wakeup can be added without changing anything above. Have whatever enqueues a task also poke a file or an `iac` room, and have the worker block on that instead of sleeping, keeping the poll as a fallback. The part that matters is which of the two is authoritative: the table stays the record of truth and the notification is only a hint, so a lost wakeup costs latency and never a task. Do it the other way round, with the notification load-bearing, and you have built a message queue with a database attached, plus every delivery guarantee you now have to provide yourself. Nothing here does this today, and for tasks measured in minutes it would be solving a problem nobody has.
 
+**Is this Java only?**
+The design is not. [`c/`](c/) has the same worker in C over ODBC, which is what DB2 CLI speaks, as an illustration that this is a few statements and a loop rather than anything language-specific. A C worker and a Java one can share the table at the same time, since neither holds a lock and both agree on four strings. It has not been compiled, and it says so.
+
 **Only one task at a time per worker?**
 Yes, deliberately: it keeps the machine four states rather than a concurrency model. For more parallelism, start more workers.
 
@@ -319,6 +322,7 @@ Small enough to read, which is not the same thing. 1,100 lines is still a couple
 
 ```
 src/          the six files you copy
+c/            the same worker in C, as an illustration; not compiled
 test/         StateMachineTest (the prover), QueueTests (behaviour + race), Bench
 sql/          mysql, postgres, oracle, mssql
 doc/          Queue_States.txt   the specification the prover reads

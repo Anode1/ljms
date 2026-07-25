@@ -1,3 +1,6 @@
+/*
+ * Copyright (c) 2001, 2026 Vasili Gavrilov. MIT License; see LICENSE.
+ */
 package org.ljms;
 
 import java.sql.Connection;
