@@ -37,7 +37,7 @@ doc/Queue_States.txt  The specification. Not a description of the code.
 INVARIANTS — do not break these
 -------------------------------
 
-1. THE CAS PREDICATE. QueueDAO.cas() ends with:
+1. THE CAS PREDICATE - the optimistic lock itself. QueueDAO.cas() ends with:
 
        WHERE id = ? AND status = ?          -- status = 'NEW'
 

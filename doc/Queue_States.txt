@@ -66,7 +66,13 @@ What the graph checks cannot see (the liveness argument, by hand):
   in turn - a genuine self-sustaining loop that the graph checks cannot see.
   See invariant 5 in development.txt.
 
-Nothing is ever locked (the rule that keeps this scalable):
+Optimistic locking (the rule that keeps this scalable):
+  The claim is optimistic locking - compare-and-swap, under the name concurrent
+  programming uses for the same idea. Nothing is locked while anything is being
+  decided: the row is read, and the write that claims it is made conditional on
+  the row not having changed since. The affected-row count is the answer: 1 we
+  won, 0 someone else did and we read again.
+
   Every transition is one predicated single-row UPDATE under autocommit. The
   correctness comes from the predicate, not from holding anything:
     - no SELECT ... FOR UPDATE

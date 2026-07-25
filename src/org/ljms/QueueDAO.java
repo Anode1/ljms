@@ -12,13 +12,18 @@ import java.util.regex.Pattern;
  * States in {@link Queue}, spec in doc/Queue_States.txt, loop in
  * {@link Processor}.
  *
- * <b>Nothing is ever locked.</b> Every transition is one predicated single-row
- * UPDATE under autocommit. The correctness comes from the predicate, not from
- * holding anything: no SELECT ... FOR UPDATE, no transaction spanning the read
- * and the update, no transaction spanning the work, no table locks, no
- * synchronized. "UPDATE ... WHERE id = ? AND status = 'NEW'" is a
- * compare-and-swap — the affected-row count is the return value, 1 means we
- * won, 0 means someone else did.
+ * <b>This is optimistic locking</b> — compare-and-swap, if you come to it from
+ * concurrent programming rather than from databases. Nothing is locked while
+ * anyone decides anything: the row is read, and the write that claims it is
+ * made conditional on the row not having changed since.
+ * "UPDATE ... WHERE id = ? AND status = 'NEW'" is that conditional write, and
+ * the affected-row count is its answer: 1 means we won, 0 means someone else
+ * did and we read again.
+ *
+ * So the correctness comes from the predicate, not from holding anything: no
+ * SELECT ... FOR UPDATE, no transaction spanning the read and the update, no
+ * transaction spanning the work, no table locks, no synchronized. Every
+ * transition is one predicated single-row UPDATE under autocommit.
  *
  * That is the whole reason you can run as many workers as you like. Contention
  * costs wasted attempts, never blocked waiters, so the cost grows linearly with
