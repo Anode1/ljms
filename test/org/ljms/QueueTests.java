@@ -22,7 +22,7 @@ import junit.framework.TestCase;
  * The one that matters is {@link #testRaceNoTaskTakenTwice}. Everything else
  * here can be established by reading the code; "N workers never take the same
  * task" cannot. Remove the "AND status = ?" from QueueDAO's compare-and-swap
- * and every other test in this file still passes — only that one fails. That
+ * and every other test in this file still passes, only that one fails. That
  * is the shape of concurrency bugs, and the reason the test exists.
  */
 public class QueueTests extends TestCase {
@@ -121,7 +121,7 @@ public class QueueTests extends TestCase {
         assertEquals(second, task.id);
     }
 
-    /** not_before holds a task back until its time — overnight runs, retry-later. */
+    /** not_before holds a task back until its time, overnight runs, retry-later. */
     public void testNotBeforeHoldsATaskBack() throws Exception {
 
         queue.put(TYPE, null, null, "2099-01-01 00:00:00");
@@ -208,7 +208,7 @@ public class QueueTests extends TestCase {
 
     /**
      * extendLease() is the fence for irreversible work, so it has to fail once
-     * the lease is gone — not merely once someone else has swept the row.
+     * the lease is gone, not merely once someone else has swept the row.
      *
      * The previous version of this test forced lease_until into the past and
      * asserted extendLease returned 1, which is what the code did and the
@@ -270,8 +270,8 @@ public class QueueTests extends TestCase {
 
     /**
      * A worker that dies mid-task leaves its row IN_PROCESS. Recovery is by
-     * lease expiry, so any worker frees it — no waiting for the dead one to
-     * come back — and a live lease is never disturbed.
+     * lease expiry, so any worker frees it, no waiting for the dead one to
+     * come back, and a live lease is never disturbed.
      */
     public void testRecoverExpiredReturnsAbandonedTasks() throws Exception {
 
@@ -301,7 +301,7 @@ public class QueueTests extends TestCase {
     }
 
     /**
-     * Restart is the retry — but only for this worker's own failures.
+     * Restart is the retry, but only for this worker's own failures.
      * Restarting one worker must not replay another's.
      */
     public void testRequeueErrorsIsScopedToThisNode() throws Exception {
@@ -334,7 +334,7 @@ public class QueueTests extends TestCase {
     }
 
     /**
-     * A throwing task parks its own row and does not take the worker down —
+     * A throwing task parks its own row and does not take the worker down
      * one failure, one terminal row, and the queue keeps flowing. The work()
      * below is also exactly how you plug your own logic in.
      */
@@ -359,7 +359,7 @@ public class QueueTests extends TestCase {
      * An Error out of work() must still park the row before the worker dies.
      *
      * If it does not, the row keeps its lease, returns to NEW when the lease
-     * expires, keeps its id and so becomes the head of the queue again — and
+     * expires, keeps its id and so becomes the head of the queue again, and
      * kills the next worker that takes it. One poison task would stop the
      * whole queue and every worker in turn, with cron restarting them into it.
      */
@@ -385,7 +385,7 @@ public class QueueTests extends TestCase {
         assertNull("and it must not still hold a lease", col(id, "lease_until"));
     }
 
-    /** "2 of 10" — position counts only waiting tasks of the same type. */
+    /** "2 of 10", position counts only waiting tasks of the same type. */
     public void testPositionAndPending() throws Exception {
 
         long a = queue.put(TYPE, 0L, null);
@@ -413,7 +413,7 @@ public class QueueTests extends TestCase {
      * This is what lets one worker occupy exactly one slot of max_connections,
      * and what keeps a connection alive for milliseconds rather than long
      * enough to be closed under it by wait_timeout. It holds because every
-     * method opens in a try and closes in the finally, and none nests —
+     * method opens in a try and closes in the finally, and none nests
      * take() passes its connection down to head() and cas() rather than
      * letting them open their own. Easy to break by accident; hence a test.
      */

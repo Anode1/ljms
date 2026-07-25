@@ -9,7 +9,7 @@ import java.util.logging.Logger;
 /**
  * The worker: a loop that takes one task at a time and runs it.
  *
- * <b>This is the file you edit.</b> Put your work in {@link #work} — that is
+ * <b>This is the file you edit.</b> Put your work in {@link #work}, that is
  * the whole integration story. LJMS is a template, not a framework: you copy
  * six files and own them, rather than depending on a jar and implementing an
  * interface it dictates.
@@ -22,18 +22,18 @@ import java.util.logging.Logger;
  *   worker.start();                   // runs until the JVM is asked to stop
  * </pre>
  *
- * Run one, or run twenty — they coordinate through the table itself, and no
+ * Run one, or run twenty, they coordinate through the table itself, and no
  * worker ever holds a lock (see {@link QueueDAO}). Each stamps rows with a
  * token unique to this JVM incarnation, "&lt;node&gt; &lt;start timestamp&gt;".
  *
  * <b>Two kinds of failure, two reactions.</b>
  * <ul>
- *   <li><i>A task fails</i> — its row goes to ERROR, one log line, and the
+ *   <li><i>A task fails</i>, its row goes to ERROR, one log line, and the
  *       worker moves on to the next task. ERROR is terminal, so nothing
  *       retries it and nothing repeats the log line. Fix the code or the data,
  *       restart the worker, and startup returns this worker's ERROR rows to
  *       NEW. Restart is the retry.</li>
- *   <li><i>The queue machinery fails</i> — usually the database is gone. That
+ *   <li><i>The queue machinery fails</i>, usually the database is gone. That
  *       is not one task's problem, so the worker backs off and, after
  *       {@link #maxErrors} consecutive failed cycles, stops rather than
  *       filling the log forever. Whatever it was holding is freed by lease
@@ -49,7 +49,7 @@ public class Processor {
     private static final Logger log = Logger.getLogger(Processor.class.getName());
 
     // ------------------------------------------------------------------
-    // EDIT THESE. Used only by main() — that is, only when you run a worker
+    // EDIT THESE. Used only by main(), that is, only when you run a worker
     // from queue.sh. If your application already knows how to reach the
     // database, ignore them entirely and hand a Connections to the
     // constructor instead.
@@ -73,7 +73,7 @@ public class Processor {
 
     /**
      * How long a taken task stays ours. Must exceed the longest task, or the
-     * task must extend it — see {@link #extendLease}. Too short means work
+     * task must extend it, see {@link #extendLease}. Too short means work
      * runs twice; too long means a dead worker's task waits that long.
      */
     public int leaseSeconds = 1800;
@@ -87,7 +87,7 @@ public class Processor {
     /**
      * How long a shutdown waits for the task in hand to finish. Past this the
      * worker hands the task back so another can take it at once, and stops.
-     * Set it to 0 to stop immediately and always hand back — cheaper if your
+     * Set it to 0 to stop immediately and always hand back, cheaper if your
      * tasks are long and safely repeatable. Keep queue.sh's patience above it.
      */
     public long shutdownWaitMs = 55000;
@@ -110,7 +110,7 @@ public class Processor {
      * who, the timestamp part says which incarnation.
      *
      * Derived on first use rather than in the constructor, so {@link #node} can
-     * still be set afterwards, and fixed from then on — it has to be stable for
+     * still be set afterwards, and fixed from then on, it has to be stable for
      * the life of the worker or its own outcome writes would stop matching.
      */
     protected String owner() {
@@ -163,7 +163,7 @@ public class Processor {
     /**
      * Keeps a long task's lease alive. Call it periodically from {@link #work}.
      *
-     * @return false if the lease is already gone — another worker now owns this
+     * @return false if the lease is already gone, another worker now owns this
      *         task, so abandon it immediately and write no outcome
      */
     protected boolean extendLease(Task task) throws Exception {
@@ -333,7 +333,7 @@ public class Processor {
 
 
     /**
-     * Runs a worker from the command line — what queue.sh starts.
+     * Runs a worker from the command line, what queue.sh starts.
      *
      * <pre>   java org.ljms.Processor [node]</pre>
      *
@@ -349,7 +349,7 @@ public class Processor {
             if (args.length > 0) worker.node = args[0];
 
             // The hook must WAIT for the worker, not just ask it to stop. A JVM
-            // runs its shutdown hooks and then halts as soon as they return —
+            // runs its shutdown hooks and then halts as soon as they return
             // it does not wait for other threads. A hook that only sets the
             // flag would let SIGTERM destroy the worker in the middle of
             // work(), leaving the row IN_PROCESS holding a live lease, so an

@@ -1,14 +1,14 @@
 Queue states (org.ljms):
 
 One table, N worker processes, no broker. A worker reads the oldest due task
-and claims it by compare-and-swap — "UPDATE ... WHERE id = ? AND status = 'NEW'" — then runs it and records the outcome. Whichever worker's UPDATE lands
+and claims it by compare-and-swap, "UPDATE ... WHERE id = ? AND status = 'NEW'", then runs it and records the outcome. Whichever worker's UPDATE lands
 first owns the row; the others match 0 rows and read the head again. Plain SQL,
 no vendor extensions. This file is the spec: the character form below is
 parsed and checked mechanically (see "Formal correctness checks"), Queue.java
 carries the same names, QueueDAO.java is the implementation.
 
 * NEW (enqueued and waiting)
-  The only state a worker claims. Always claimable once due — there is no
+  The only state a worker claims. Always claimable once due, there is no
   "pending but no longer runnable" state, so a queue position count is honest.
   not_before holds a task back until a chosen time (overnight batches, or a
   capacity check that said "not yet").
@@ -97,7 +97,7 @@ Optimistic locking (the rule that keeps this scalable):
   "UPDATE ... WHERE id = ? AND status = 'NEW'" is a compare-and-swap: the
   affected-row count is the return value, 1 = won, 0 = lost. The only lock is
   the one the database takes inside that statement, released at statement end.
-  So contention costs wasted attempts, never blocked waiters — the cost grows
+  So contention costs wasted attempts, never blocked waiters, the cost grows
   linearly with workers instead of collapsing at some threshold. This is what
   lets you run as many workers as you like.
 
@@ -110,12 +110,12 @@ Optimistic locking (the rule that keeps this scalable):
   it can return a row another worker has already claimed and committed. That is
   harmless ONLY because the UPDATE re-checks status with a current read. Do not
   drop "AND status = ?" from the claim on the grounds that we just selected the
-  row — that removes the CAS, and it fails silently, and only under load.
+  row, that removes the CAS, and it fails silently, and only under load.
 
 Why no automatic retries:
   One failure, one log line, one row to look at. A retry loop multiplies a
   single problem across the log and hides how many distinct problems there
-  actually are. The fix is a human fix — to the code or to the data — and
+  actually are. The fix is a human fix, to the code or to the data, and
   restarting the worker is the retry: startup moves this worker's ERROR rows
   back to NEW (QueueDAO.requeueErrors, scoped by owner_node so restarting one
   worker does not replay another's failures).
@@ -128,12 +128,12 @@ Why a stopping worker releases its task, instead of leaving it to the lease:
   relied on the restart to pick it up again: recovery there was owner-scoped,
   so the same worker reclaimed its own in-flight rows the moment it came back.
   That is a good policy and it does not survive the move to lease-based
-  recovery — with the lease as the only way out of IN_PROCESS, an ordinary
+  recovery, with the lease as the only way out of IN_PROCESS, an ordinary
   deliberate stop would leave the task untouchable for the rest of the lease,
   half an hour by default.
 
   So the departing worker hands the task back itself (release). That keeps the
-  ancestor's property — a stop costs nothing — without reintroducing its
+  ancestor's property, a stop costs nothing, without reintroducing its
   requirement that node ids be unique and stable, since nothing has to work out
   whose row it was. The lease is then left doing only the job it is uniquely
   good at: the worker that never comes back to explain itself.
@@ -148,7 +148,7 @@ Why recovery is by lease and not by owner:
   - two workers sharing a node id cannot steal each other's in-flight rows, so
     the node id is a diagnostics label, not a correctness requirement;
   - when the database is what failed, a worker cannot write "put me back"
-    anywhere — the lease expires on its own.
+    anywhere, the lease expires on its own.
 
 Delivery is at-least-once:
   A worker that is slow rather than dead can lose its lease and have the task

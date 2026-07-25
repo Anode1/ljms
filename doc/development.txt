@@ -1,4 +1,4 @@
-LJMS — development notes
+LJMS, development notes
 ========================
 
 The README is the pitch and the user manual. This file is the details: how it
@@ -9,7 +9,7 @@ THE FILES
 ---------
 
 src/org/ljms/
-  Queue.java        The four state names. Nothing else — no transition table,
+  Queue.java        The four state names. Nothing else, no transition table,
                     because doc/Queue_States.txt is the spec and the SQL is the
                     implementation, and a third copy would only be something
                     for those two to drift from.
@@ -34,7 +34,7 @@ sql/                One schema per database. They differ only in types.
 doc/Queue_States.txt  The specification. Not a description of the code.
 
 
-INVARIANTS — do not break these
+INVARIANTS, do not break these
 -------------------------------
 
 1. THE CAS PREDICATE - the optimistic lock itself. QueueDAO.cas() ends with:
@@ -48,7 +48,7 @@ INVARIANTS — do not break these
    harmless.
 
    Remove it and two workers get the same task. Silently. Only under load.
-   Every test in QueueTests still passes except testRaceNoTaskTakenTwice —
+   Every test in QueueTests still passes except testRaceNoTaskTakenTwice
    which is precisely why that test exists.
 
 2. NOTHING IS HELD ACROSS YOUR CODE. No SELECT ... FOR UPDATE. No transaction
@@ -59,7 +59,7 @@ INVARIANTS — do not break these
    workers CAS-ing the same row do serialize for that instant - but no lock is
    held while your code runs.
 
-   Autocommit is not assumed, it is checked: QueueDAO.open() refuses a
+   Autocommit is not assumed but checked: QueueDAO.open() refuses a
    connection that does not have it. Handed one from a pool configured
    autoCommit=false, nothing would ever commit - close() would roll back the
    claim and the outcome, the row would stay NEW, and every worker would run
@@ -73,7 +73,7 @@ INVARIANTS — do not break these
 
 3. OWNERSHIP ON EVERY OUTCOME. done(), error() and extendLease() all carry
    "AND owner = ? AND status = 'IN_PROCESS'" and return the affected-row count.
-   0 means the lease was lost — another worker owns the task now — and the
+   0 means the lease was lost, another worker owns the task now, and the
    caller must not treat it as success. Processor logs a warning; a task doing
    anything irreversible should call extendLease() first and stop if it fails.
 
@@ -101,7 +101,7 @@ INVARIANTS — do not break these
 7. THE ROW-LIMIT CLAUSE IS NOT AN OPTIMISATION. head() ends with
    Dialect.firstRowOnly(). Without it, MySQL plans for the whole result set:
    it walks the primary key in id order to avoid a sort, filters on status as
-   it goes, and does not use ix_queue_take at all — hundreds of rows examined
+   it goes, and does not use ix_queue_take at all, hundreds of rows examined
    to return one. Reading only the first row of the cursor does not help,
    because the plan is already chosen. Verify with EXPLAIN after any change to
    that query. You want the plan on ix_queue_take - MySQL reports type=range
@@ -145,11 +145,11 @@ RUNNING THINGS
   ant prove     the state machine. No database, 19 ms. Run this on every change
                 to doc/Queue_States.txt or Queue.java.
   ant test      behaviour + race. Set the DB constants at the top of
-                QueueTests.java first — a SCRATCH database, it drops the table
+                QueueTests.java first, a SCRATCH database, it drops the table
                 on every test method.
   ant bench     throughput. Same, in Bench.java. Note what it measures: the
                 queue's overhead with no work in between. In the workloads this
-                is built for — tasks of seconds to minutes — that overhead is a
+                is built for, tasks of seconds to minutes, that overhead is a
                 rounding error and the database sits idle. The number is useful
                 for one question only: are your tasks shorter than ~2 ms, in
                 which case you have outgrown this design.
@@ -166,7 +166,7 @@ StateMachineTest.testCodeAndSpecUseTheSameNames.
 DESIGN DECISIONS, AND WHY
 -------------------------
 
-No automatic retries. A failed task goes to ERROR and stays there — one
+No automatic retries. A failed task goes to ERROR and stays there, one
 failure, one log line, one row. A retry loop multiplies a single problem
 across the log and hides how many distinct problems there are. Restarting the
 worker is the retry: startup moves that worker's ERROR rows back to NEW, on the
@@ -177,7 +177,7 @@ Recovery by lease, not by owner. The obvious design keys recovery to the worker
 that died: "on startup, reset my own in-flight rows". It has three problems the
 lease does not. Work is stranded if that host never returns under the same name.
 Two workers sharing a node id steal each other's live rows. And when the
-DATABASE is what failed, a worker cannot write "put me back" anywhere — it has
+DATABASE is what failed, a worker cannot write "put me back" anywhere, it has
 nothing to write to. A lease expires without anyone's help.
 
 At-least-once, said out loud. A worker that is slow rather than dead can lose
@@ -287,11 +287,11 @@ KNOWN GAPS
   more ORDER BY term would do it; not added on speculation.
 - No fairness between submitters. With many independent users, one who queues
   fifty tasks blocks the person who queues one behind all fifty. The fix is an
-  extra ordering term (fewest currently-running first), not a new mechanism —
+  extra ordering term (fewest currently-running first), not a new mechanism
   but it is a policy decision, so it is not baked in.
 - N workers all read the same head row, so contention is O(N) wasted attempts.
   Fine at the scale this is for. If it ever matters, read the top K rows and
-  try them in order — still no locks.
+  try them in order, still no locks.
 - Nothing prunes DONE rows. Add a delete-older-than job if the table grows.
 - No metrics or health endpoint. "SELECT status, COUNT(*) FROM QUEUE GROUP BY
   status" is the monitoring interface, and that is deliberate.

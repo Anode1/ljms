@@ -10,7 +10,7 @@
 
   No Maven, no dependency resolution, no plugins. The only jar involved is
   junit, vendored in lib/, and it is needed only by the tests. LJMS itself
-  compiles against the JDK and nothing else — put your JDBC driver on the
+  compiles against the JDK and nothing else. Put your JDBC driver on the
   classpath and that is the whole dependency list.
 -->
 <project name="ljms" default="compile" basedir=".">

@@ -11,12 +11,12 @@ import java.lang.reflect.Proxy;
  *
  * <pre>   ant bench</pre>
  *
- * Set the constants below first — same scratch database as the tests, and it
+ * Set the constants below first, same scratch database as the tests, and it
  * drops and recreates the table.
  *
  * What it measures is one full task cycle: take() + done(), which is one
  * SELECT and two UPDATEs. It does no work in between, so the numbers are the
- * queue's own overhead and nothing else — an upper bound you will never see in
+ * queue's own overhead and nothing else, an upper bound you will never see in
  * production, where the work dominates.
  *
  * It runs each worker count twice, unpooled and pooled, because the difference
@@ -27,7 +27,7 @@ import java.lang.reflect.Proxy;
 public class Bench {
 
     // ------------------------------------------------------------------
-    // EDIT THESE — a scratch database. Drops and recreates the QUEUE table.
+    // EDIT THESE, a scratch database. Drops and recreates the QUEUE table.
     // ------------------------------------------------------------------
 
     private static final String DB_URL      = "jdbc:mysql://127.0.0.1/ljms_test";

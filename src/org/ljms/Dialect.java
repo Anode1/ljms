@@ -3,7 +3,7 @@ package org.ljms;
 /**
  * The two SQL expressions that differ between databases: date arithmetic and
  * row limiting. Everything else in {@link QueueDAO} is plain SQL that runs
- * unchanged anywhere — SELECT, UPDATE, INSERT, CURRENT_TIMESTAMP, COUNT.
+ * unchanged anywhere, SELECT, UPDATE, INSERT, CURRENT_TIMESTAMP, COUNT.
  *
  * Not quite the whole portability surface: QueueDAO.put() retrieves its
  * generated key with Statement.RETURN_GENERATED_KEYS, which the Oracle driver
@@ -13,7 +13,7 @@ package org.ljms;
  * Note it is the <i>database</i> that computes "now", never the worker. Lease
  * expiry is compared against database time, so taking "now" from a worker's
  * own clock would make leases expire early or late by however much the host
- * clocks disagree — and on a queue whose whole recovery story is the lease,
+ * clocks disagree, and on a queue whose whole recovery story is the lease,
  * that is not a detail.
  */
 public enum Dialect {
@@ -53,7 +53,7 @@ public enum Dialect {
     /**
      * Trailing clause that keeps a sorted query to its first row.
      *
-     * Not an optimisation — a correctness-of-plan matter. Without it the
+     * Not an optimisation, a correctness-of-plan matter. Without it the
      * optimiser plans for the whole result set: MySQL walks the primary key in
      * id order to avoid a sort and filters on status as it goes, examining
      * hundreds of rows to hand back one, and the index on (status, id) is not

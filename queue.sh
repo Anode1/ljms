@@ -10,7 +10,7 @@
 # Safe to call "start" from cron every few minutes: an already-running worker
 # makes it a no-op, so cron doubles as a restart-if-dead watchdog.
 #
-# Database credentials live in Processor.java, not here — one place to edit.
+# Database credentials live in Processor.java, not here, one place to edit.
 # Pass a node name only if you run more than one worker on this host.
 LJMS_NODE="${LJMS_NODE:-}"
 

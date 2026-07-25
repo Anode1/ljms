@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
  * States in {@link Queue}, spec in doc/Queue_States.txt, loop in
  * {@link Processor}.
  *
- * <b>This is optimistic locking</b> — compare-and-swap, if you come to it from
+ * <b>This is optimistic locking</b>, compare-and-swap, if you come to it from
  * concurrent programming rather than from databases. Nothing is locked while
  * anyone decides anything: the row is read, and the write that claims it is
  * made conditional on the row not having changed since.
@@ -28,15 +28,15 @@ import java.util.regex.Pattern;
  * That is the whole reason you can run as many workers as you like. Contention
  * costs wasted attempts, never blocked waiters, so the cost grows linearly with
  * workers instead of collapsing past some threshold. The pattern this avoids is
- * a lock held across application time — SELECT FOR UPDATE, do the work, COMMIT
- * — which looks perfect in testing, where there is no contention, and convoys
+ * a lock held across application time, SELECT FOR UPDATE, do the work, COMMIT
+ *, which looks perfect in testing, where there is no contention, and convoys
  * under real load: workers queue behind the leader, the connection pool drains,
  * timeouts cascade.
  *
  * <b>No automatic retries.</b> A task that fails goes to ERROR and stays there:
  * one failure, one log line, one row to look at. A retry loop multiplies one
  * problem across the log and hides how many distinct problems there are. The
- * fix is a human fix — to the code or to the data — and restarting the worker
+ * fix is a human fix, to the code or to the data, and restarting the worker
  * is the retry ({@link #requeueErrors}). The rest of the queue keeps flowing
  * past a parked task rather than stalling on it.
  *
@@ -46,12 +46,12 @@ import java.util.regex.Pattern;
  * cases that owner-matching cannot:
  * <ul>
  *   <li>a dead worker's tasks come back without waiting for that worker to
- *       restart — owner-keyed recovery strands them if the host never returns
+ *       restart, owner-keyed recovery strands them if the host never returns
  *       under the same name;</li>
  *   <li>two workers sharing a node id cannot steal each other's in-flight
  *       rows, so the node id is a label, not a correctness requirement;</li>
  *   <li>when the database is what failed, a worker cannot write "put me back"
- *       anywhere — the lease expires on its own.</li>
+ *       anywhere, the lease expires on its own.</li>
  * </ul>
  *
  * <b>At-least-once.</b> A worker that is slow rather than dead can lose its
@@ -101,9 +101,9 @@ public class QueueDAO {
      * A connection of our own, checked.
      *
      * Every state change here is one self-contained statement that must commit
-     * on its own. Handed a connection with autocommit off — which a pool can
+     * on its own. Handed a connection with autocommit off, which a pool can
      * easily be configured to give, and which HikariCP, container DataSources
-     * and Spring-managed connections all do — nothing would ever be committed:
+     * and Spring-managed connections all do, nothing would ever be committed:
      * close() would roll the claim and the outcome back, the row would stay
      * NEW, and every worker would take and run the same task forever, reporting
      * nothing worse than a "lease was already lost" warning each cycle. Silent,
@@ -144,8 +144,8 @@ public class QueueDAO {
      * UPDATE lands first moves the row, and everyone else matches 0 rows.
      *
      * Do not "optimise" that predicate away on the grounds that we just
-     * selected the row. The SELECT is a snapshot read — under REPEATABLE READ
-     * it can hand you a row another worker has already taken and committed —
+     * selected the row. The SELECT is a snapshot read, under REPEATABLE READ
+     * it can hand you a row another worker has already taken and committed
      * and it is only harmless because the UPDATE re-checks status with a
      * current read. Removing it hands the same task to two workers, silently,
      * and only under load. LJMS's race test exists to catch exactly that: with
@@ -159,7 +159,7 @@ public class QueueDAO {
      * table. Losing all attempts requires losing on TAKE_ATTEMPTS successive
      * and different head rows, so it is rare rather than impossible.
      *
-     * @param owner        this worker's lease token — see {@link Processor}
+     * @param owner        this worker's lease token, see {@link Processor}
      * @param ownerNode    the node part of it, without the incarnation
      * @param leaseSeconds how long the claim holds before other workers may
      *                     reclaim the row; must exceed the longest task, or
@@ -184,7 +184,7 @@ public class QueueDAO {
                     return task;
                 }
                 // Somebody else took it between our read and our update.
-                // The next head() will skip it — it is no longer NEW.
+                // The next head() will skip it, it is no longer NEW.
             }
             return null;
         }
@@ -250,7 +250,7 @@ public class QueueDAO {
     //
     // Both carry "AND owner = ? AND status = 'IN_PROCESS'", so a worker can
     // only move a row it still holds. Losing the lease makes them no-ops
-    // (return 0) rather than clobbering whoever holds it now — check the
+    // (return 0) rather than clobbering whoever holds it now, check the
     // return value.
     // ------------------------------------------------------------------
 
@@ -289,7 +289,7 @@ public class QueueDAO {
     }
 
     /**
-     * Extends the lease on a task still being worked on — for tasks that can
+     * Extends the lease on a task still being worked on, for tasks that can
      * outlive the lease they were taken with.
      *
      * @return 0 if the lease is already gone: you no longer own the task and
@@ -334,13 +334,13 @@ public class QueueDAO {
      * being shut down and will not finish it.
      *
      * Without this, a deliberate stop mid-task would leave the row unavailable
-     * for the whole remaining lease — half an hour by default — because lease
+     * for the whole remaining lease, half an hour by default, because lease
      * expiry is the only other way out of IN_PROCESS. A worker that knows it is
      * leaving can say so, and the task is takeable again at once.
      *
      * The ownership guard means a task that turns out to finish anyway cannot
      * then overwrite this: its done() matches nothing. It may, of course,
-     * already have run — that is at-least-once, and it is what lease expiry
+     * already have run, that is at-least-once, and it is what lease expiry
      * would have done later regardless.
      *
      * @return 0 if we no longer held it
@@ -371,7 +371,7 @@ public class QueueDAO {
     /**
      * IN_PROCESS -&gt; NEW for every row whose lease has run out: the worker
      * holding it died, hung, or lost the database. Owner-independent, so the
-     * next worker to run this recovers it — no waiting for the dead one.
+     * next worker to run this recovers it, no waiting for the dead one.
      *
      * @return number of tasks recovered
      */
@@ -400,7 +400,7 @@ public class QueueDAO {
     /**
      * ERROR -&gt; NEW for the tasks this worker failed. Run once at startup:
      * restarting the worker, after the code or the data has been fixed, is how
-     * a failed task is retried — nothing else retries anywhere.
+     * a failed task is retried, nothing else retries anywhere.
      *
      * Scoped to this worker's node, so restarting one worker does not replay
      * another's failures. Nothing here is in flight (ERROR rows hold no lease),
@@ -437,7 +437,7 @@ public class QueueDAO {
      * The node-scoped {@link #requeueErrors(String)} is the automatic path, and
      * it depends on the node id being the same as last time. That is fine for a
      * fixed host and wrong for a container, whose hostname is its id and
-     * changes at every redeploy — leaving that worker's ERROR rows with no path
+     * changes at every redeploy, leaving that worker's ERROR rows with no path
      * out at all, because the node-scoped sweep is the only one. This is the
      * operator's way back: deliberate, unscoped, and never called automatically.
      *
@@ -494,7 +494,7 @@ public class QueueDAO {
     }
 
     /**
-     * Enqueues on a connection you already have — so putting a task and the
+     * Enqueues on a connection you already have, so putting a task and the
      * database work that justifies it can share one transaction, if you are
      * running without autocommit.
      */
@@ -554,13 +554,13 @@ public class QueueDAO {
     }
 
     /**
-     * 1-based position of a waiting task among tasks of its type — the "2" in
+     * 1-based position of a waiting task among tasks of its type, the "2" in
      * "2 of 10". Tasks are taken in id order, so this is how many are ahead of
      * it, plus one.
      *
      * Counts only tasks that are actually due: one held back by not_before is
      * not ahead of you in any sense you would want reported. Assumes the task
-     * you are asking about is itself still waiting — it does not check, so a
+     * you are asking about is itself still waiting, it does not check, so a
      * DONE task reports the position it would have if it were not.
      */
     public int position(String taskType, long id) throws Exception {
@@ -570,7 +570,7 @@ public class QueueDAO {
                      taskType, Long.valueOf(id));
     }
 
-    /** How many tasks of this type are waiting — the "10" in "2 of 10". */
+    /** How many tasks of this type are waiting, the "10" in "2 of 10". */
     public int pending(String taskType) throws Exception {
         return count("SELECT COUNT(*) FROM " + table +
                      " WHERE status = ? AND task_type = ?" +

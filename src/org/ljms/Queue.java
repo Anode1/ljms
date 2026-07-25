@@ -35,7 +35,7 @@ public class Queue {
     /**
      * Failed. Terminal for the machine, parked for a human: no automatic retry
      * ever runs. Restarting the worker, after the code or data is fixed, is
-     * the retry — see {@link QueueDAO#requeueErrors}.
+     * the retry, see {@link QueueDAO#requeueErrors}.
      */
     public static final String ERROR      = "ERROR";
 

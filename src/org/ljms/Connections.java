@@ -5,7 +5,7 @@ import java.sql.Connection;
 /**
  * Where LJMS gets a database connection. The only thing you have to supply.
  *
- * One method, so anything you already have adapts in a line — a pool, a JNDI
+ * One method, so anything you already have adapts in a line, a pool, a JNDI
  * DataSource, a plain DriverManager call:
  *
  * <pre>

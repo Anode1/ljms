@@ -22,7 +22,7 @@ import junit.framework.TestCase;
 /**
  * Proves the state machine is well formed.
  *
- * The machine is not written here — it is parsed from its single source of
+ * The machine is not written here. It is parsed from its single source of
  * truth, the "Character form" block in doc/Queue_States.txt. Editing the doc
  * and re-running this is how the machine stays correct; a second copy in code
  * would only be something for the doc to drift from.
@@ -32,11 +32,11 @@ import junit.framework.TestCase;
  * think of:
  * <ul>
  *   <li>a start state exists</li>
- *   <li>reachability — every state is reachable from start (no orphan)</li>
- *   <li>no dead end — every non-terminal has an outgoing edge</li>
- *   <li>sinks — terminal states have no outgoing edge</li>
- *   <li>determinism — no (state, event) pair maps to two targets</li>
- *   <li>non-empty — some path leads from start to a terminal</li>
+ *   <li>reachability, every state is reachable from start (no orphan)</li>
+ *   <li>no dead end, every non-terminal has an outgoing edge</li>
+ *   <li>sinks, terminal states have no outgoing edge</li>
+ *   <li>determinism, no (state, event) pair maps to two targets</li>
+ *   <li>non-empty, some path leads from start to a terminal</li>
  * </ul>
  *
  * Add a state to the doc and this checks it automatically. No database, no
@@ -154,7 +154,7 @@ public class StateMachineTest extends TestCase {
         fail("machine is empty: no path from " + start + " to a terminal state");
     }
 
-    /** The names in Queue.java must be the names in the spec — one symbol, end to end. */
+    /** The names in Queue.java must be the names in the spec, one symbol, end to end. */
     public void testCodeAndSpecUseTheSameNames() {
         for (String state : new String[] { Queue.NEW, Queue.IN_PROCESS, Queue.DONE, Queue.ERROR }) {
             assertTrue("state " + state + " from Queue.java is not in " + DOC + "'s machine",
