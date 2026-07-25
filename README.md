@@ -60,6 +60,58 @@ Your JDBC driver needs to be on the classpath; nothing here bundles one.
 
 The operations are `put`, `take`, `done`, `error`. The first two are the names `java.util.concurrent.BlockingQueue` uses; the other two have no equivalent there, because an in-memory queue has nothing to record. The rest of the surface — `extendLease`, `recoverExpired`, `requeueErrors`, `requeueAllErrors`, `position`, `pending`, `get` — you can ignore until you need it.
 
+## Who does what
+
+```
+   your web tier                    the QUEUE table                 workers
+   ------------                     ---------------                 -------
+   POST /reports  ──put()──────►    NEW                    ◄──take()──  loop
+                                      │                                   │
+   GET  /reports/42  ──SELECT──►    IN_PROCESS  ◄──────────────────── work()
+        (status, no API)              │                                   │
+                                    DONE / ERROR           ◄──done()/error()
+```
+
+Enqueueing is one call from a servlet. **Showing status is a plain `SELECT`** — there is no client library to install and no second system to reconcile, because the queue is a table in the database your web tier already talks to.
+
+One task, for a status endpoint:
+
+```sql
+SELECT status, error, created, started, finished
+  FROM QUEUE WHERE id = ?
+```
+
+Everything queued for one of your own records — `ref_id` is yours to fill in:
+
+```sql
+SELECT id, task_type, status, created, finished
+  FROM QUEUE WHERE ref_id = ? ORDER BY id DESC
+```
+
+"2 of 10", without counting anything not yet runnable:
+
+```sql
+SELECT 1 + COUNT(*) FROM QUEUE
+ WHERE status = 'NEW' AND task_type = ? AND id < ?
+   AND (not_before IS NULL OR not_before <= CURRENT_TIMESTAMP)
+```
+
+(or `QueueDAO.position(taskType, id)` and `pending(taskType)`, which are those two queries.)
+
+What the queue is doing right now, for an ops page — or for you, at a prompt:
+
+```sql
+SELECT status, COUNT(*) FROM QUEUE GROUP BY status;
+
+SELECT id, task_type, owner, started FROM QUEUE
+ WHERE status = 'IN_PROCESS' ORDER BY started;      -- in flight, and on which worker
+
+SELECT id, task_type, error, finished FROM QUEUE
+ WHERE status = 'ERROR' ORDER BY finished DESC;     -- what needs a human
+```
+
+Nothing above is an LJMS API, and none of it can drift from what the workers are actually doing — it is the same rows they are updating.
+
 ## The states
 
 ```
