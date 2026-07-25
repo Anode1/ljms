@@ -109,7 +109,9 @@ This is why you can run as many workers as you like. Contention costs wasted att
 
 ## Performance
 
-Reproducible, not asserted — `ant bench` runs this on your own hardware. One task here is `take()` + `done()`: one SELECT and two UPDATEs, with no work in between, so these are the queue's own overhead and nothing else.
+**First, the honest framing: in the projects this is for, the queue is never the bottleneck and the database is mostly idle.** A task that runs for minutes — a model run, an import, a publish — carries about 2 ms of queue overhead. That is 0.001% of the task. These numbers are not for capacity planning; they are for deciding whether you have outgrown the design. If your tasks are shorter than the queue overhead, you have.
+
+Reproducible, not asserted — `ant bench` runs it on your own hardware. One task here is `take()` + `done()`: one SELECT and two UPDATEs with *no work in between*, so it measures the queue's own overhead and nothing else — a ceiling you will never approach in production.
 
 Intel i7-1165G7, MySQL 8.0.46, JDK 21, local SSD, default `innodb_flush_log_at_trx_commit=1`:
 
@@ -128,7 +130,7 @@ Three things that table says, more useful than the numbers themselves:
 
 **Contention costs, but does not collapse.** Eight workers are slower than four: they read the same head row, and the losers retry. Throughput sags; nothing blocks, nothing times out, nothing cascades. A design that holds a lock across the work does not sag there — it falls over, and only in production.
 
-If you need thousands of tasks a second, use a broker. If you need hundreds, this is a table.
+If you need thousands of tasks a second, use a broker. If you need hundreds — or, as is far more common, tens of tasks that each take minutes — this is a table.
 
 ## When it fits
 

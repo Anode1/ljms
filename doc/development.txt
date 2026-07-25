@@ -119,7 +119,12 @@ RUNNING THINGS
   ant test      behaviour + race. Set the DB constants at the top of
                 QueueTests.java first — a SCRATCH database, it drops the table
                 on every test method.
-  ant bench     throughput. Same, in Bench.java.
+  ant bench     throughput. Same, in Bench.java. Note what it measures: the
+                queue's overhead with no work in between. In the workloads this
+                is built for — tasks of seconds to minutes — that overhead is a
+                rounding error and the database sits idle. The number is useful
+                for one question only: are your tasks shorter than ~2 ms, in
+                which case you have outgrown this design.
 
 There is no CI configuration here on purpose: the tests need a database, and
 which database is your decision.
