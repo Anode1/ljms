@@ -157,16 +157,26 @@ public class Processor {
 
         log.info("LJMS worker starting, owner=" + owner());
 
-        // Restart is the retry: whatever this worker failed last time goes back
-        // on the queue, on the assumption it was restarted because the cause
-        // was fixed.
-        int requeued = queue.requeueErrors(node);
-        if (requeued > 0) log.warning("Re-queued " + requeued + " previously failed task(s)");
-
         int errors = 0;
+        boolean requeuedErrors = false;
 
         while (!terminating) {
             try {
+                // Restart is the retry: whatever this worker failed last time
+                // goes back on the queue, on the assumption it was restarted
+                // because the cause was fixed.
+                //
+                // Inside the loop, not before it: if the database happens to be
+                // down at startup this has to back off like any other failure,
+                // rather than killing a worker that would have recovered a
+                // minute later. Runs once, on the first cycle that reaches the
+                // database.
+                if (!requeuedErrors) {
+                    int requeued = queue.requeueErrors(node);
+                    requeuedErrors = true;
+                    if (requeued > 0) log.warning("Re-queued " + requeued + " previously failed task(s)");
+                }
+
                 // Free anything a dead worker was holding. Owner-independent,
                 // so this covers other workers too, not just our own crashes.
                 //
