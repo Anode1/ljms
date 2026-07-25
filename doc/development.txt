@@ -51,10 +51,20 @@ INVARIANTS — do not break these
    Every test in QueueTests still passes except testRaceNoTaskTakenTwice —
    which is precisely why that test exists.
 
-2. NOTHING IS HELD. No SELECT ... FOR UPDATE. No transaction spanning the read
-   and the update. No transaction spanning work(). No table locks, no
-   synchronized. Every transition is one predicated single-row UPDATE under
-   autocommit.
+2. NOTHING IS HELD ACROSS YOUR CODE. No SELECT ... FOR UPDATE. No transaction
+   spanning the read and the update. No transaction spanning work(). No table
+   locks, no synchronized. The claim and each outcome are single predicated
+   UPDATEs by primary key under autocommit; the two recovery sweeps are
+   set-based. The database still takes a row lock inside each statement - two
+   workers CAS-ing the same row do serialize for that instant - but no lock is
+   held while your code runs.
+
+   Autocommit is not assumed, it is checked: QueueDAO.open() refuses a
+   connection that does not have it. Handed one from a pool configured
+   autoCommit=false, nothing would ever commit - close() would roll back the
+   claim and the outcome, the row would stay NEW, and every worker would run
+   the same task forever, reporting only a "lease was already lost" warning
+   each cycle. Silent and catastrophic; cheaper to refuse.
 
    This is what makes worker count scale: contention costs wasted attempts,
    never blocked waiters, so it degrades linearly instead of collapsing. The
@@ -72,13 +82,31 @@ INVARIANTS — do not break these
    clock expires early or late by whatever the host clocks disagree by. That is
    why Dialect.nowPlusSeconds() exists instead of a bound timestamp.
 
-5. THE ROW-LIMIT CLAUSE IS NOT AN OPTIMISATION. head() ends with
+5. process() CATCHES Throwable, NOT Exception, AND PARKS BEFORE RETHROWING.
+   An Error out of work() - OutOfMemory, StackOverflow, NoClassDefFound, all
+   reachable when you drop your own code in - would otherwise leave the row
+   IN_PROCESS holding a live lease. After expiry it returns to NEW keeping its
+   id, becomes the head again, and kills the next worker that takes it: one
+   poison task stops the whole queue and every worker in turn, with cron
+   restarting them into it. Park the row, then rethrow, so the worker dies and
+   nothing else dies on the same task.
+   Covered by testProcessorParksATaskThatThrowsAnError.
+
+6. THE SHUTDOWN HOOK JOINS THE WORKER THREAD. A JVM runs its hooks and halts as
+   soon as they return; it does not wait for other threads. A hook that only
+   set the flag would let SIGTERM destroy the worker mid-work(), stranding the
+   row for a full lease on an ordinary deliberate stop. main() joins, bounded
+   by shutdownWaitMs, and queue.sh waits longer than that.
+
+7. THE ROW-LIMIT CLAUSE IS NOT AN OPTIMISATION. head() ends with
    Dialect.firstRowOnly(). Without it, MySQL plans for the whole result set:
    it walks the primary key in id order to avoid a sort, filters on status as
    it goes, and does not use ix_queue_take at all — hundreds of rows examined
    to return one. Reading only the first row of the cursor does not help,
    because the plan is already chosen. Verify with EXPLAIN after any change to
-   that query; you want type=range on ix_queue_take, not type=index on PRIMARY.
+   that query. You want the plan on ix_queue_take - MySQL reports type=range
+   here, because of the not_before OR-condition - and NOT type=index on
+   PRIMARY, which is what the missing limit produced.
 
 
 PORTING TO ANOTHER DATABASE
@@ -178,11 +206,25 @@ so sweeping on every task would add an UPDATE to every task in order to notice
 nothing. Half a lease is timely enough and rare enough to disappear against
 real work.
 
-take() retries a lost race internally. Returning null on a lost race would make
-a busy queue look empty to the caller, which would then sleep out a whole poll
-interval with work sitting in the table. So null means exactly "nothing due".
-Bounded at TAKE_ATTEMPTS, since with N workers at most N-1 can beat you to a
-given row.
+take() retries a lost race internally, so that a busy queue does not routinely
+look empty to the caller and get slept on for a whole polling interval. This
+reduces the probability; it does not establish an invariant. null means
+"nothing due, OR every attempt lost a race", and the caller cannot tell which.
+Each attempt re-reads the head, so losing all of them means being beaten on
+TAKE_ATTEMPTS successive and different rows - rare, not impossible.
+
+requeueErrors() also clears not_before. A task deliberately scheduled for 2am
+that failed will, after a worker restart, run immediately rather than waiting
+for the next 2am. Deliberate - the schedule has usually passed by then - but
+worth knowing.
+
+The node id is a diagnostics label for claiming and recovery, where the lease
+carries the correctness. It is NOT merely a label for requeueErrors(), which
+is scoped by owner_node and is the only automatic path out of ERROR. Where the
+node id changes between runs - a container whose hostname is its id, or an
+operator adding LJMS_NODE to a worker that had defaulted to the hostname -
+that worker's ERROR rows have no automatic path back, and "restart is the
+retry" never fires for them. Use a stable node id, or requeueAllErrors().
 
 
 KNOWN GAPS

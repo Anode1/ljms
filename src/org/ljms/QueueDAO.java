@@ -92,6 +92,41 @@ public class QueueDAO {
     }
 
 
+    /**
+     * A connection of our own, checked.
+     *
+     * Every state change here is one self-contained statement that must commit
+     * on its own. Handed a connection with autocommit off — which a pool can
+     * easily be configured to give, and which HikariCP, container DataSources
+     * and Spring-managed connections all do — nothing would ever be committed:
+     * close() would roll the claim and the outcome back, the row would stay
+     * NEW, and every worker would take and run the same task forever, reporting
+     * nothing worse than a "lease was already lost" warning each cycle. Silent,
+     * and catastrophic. Cheaper to refuse than to debug.
+     *
+     * The put(Connection, ...) overload deliberately does NOT go through here:
+     * enqueueing inside your own transaction is a supported thing to want.
+     */
+    private Connection open() throws Exception {
+        Connection con = db.getConnection();
+        try {
+            if (!con.getAutoCommit()) {
+                throw new IllegalStateException(
+                        "LJMS needs connections in autocommit mode, and this one is not. "
+                      + "Every state change is a single self-contained statement; inside a "
+                      + "caller-managed transaction they would be rolled back on close and "
+                      + "the same task would be run forever. Configure the pool with "
+                      + "autoCommit=true, or give LJMS its own Connections.");
+            }
+        }
+        catch (Exception e) {
+            try { con.close(); } catch (Exception ignore) {}
+            throw e;
+        }
+        return con;
+    }
+
+
     // ------------------------------------------------------------------
     // take
     // ------------------------------------------------------------------
@@ -111,8 +146,13 @@ public class QueueDAO {
      * and only under load. LJMS's race test exists to catch exactly that: with
      * the predicate removed, every other test still passes.
      *
-     * A lost race is retried here rather than reported, so null means exactly
-     * "nothing due" and the caller can sleep on it.
+     * A lost race is retried here, up to TAKE_ATTEMPTS times, so that a busy
+     * queue does not routinely look empty to the caller. It is a reduction in
+     * probability, not a guarantee: null means "nothing due, or every attempt
+     * lost a race", and the caller cannot tell which. Under heavy contention a
+     * worker can therefore sleep out a polling interval with work still in the
+     * table. Losing all attempts requires losing on TAKE_ATTEMPTS successive
+     * and different head rows, so it is rare rather than impossible.
      *
      * @param owner        this worker's lease token — see {@link Processor}
      * @param ownerNode    the node part of it, without the incarnation
@@ -123,11 +163,12 @@ public class QueueDAO {
     public Task take(String owner, String ownerNode, int leaseSeconds) throws Exception {
         Connection con = null;
         try {
-            con = db.getConnection();
+            con = open();
 
-            // Bounded: with N workers, at most N-1 can beat us to a given row,
-            // so a handful of attempts covers any realistic contention. If we
-            // lose them all, the caller polls again a moment later.
+            // Bounded. Each attempt re-reads the head, so a loss means some
+            // other worker took that particular row and the next attempt sees
+            // a different one; losing all of them means being beaten on five
+            // successive rows. If that happens the caller polls again shortly.
             for (int attempt = 0; attempt < TAKE_ATTEMPTS; attempt++) {
 
                 Task task = head(con);
@@ -222,7 +263,7 @@ public class QueueDAO {
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = db.getConnection();
+            con = open();
             String q =
                     "UPDATE " + table +
                     "   SET status = ?, error = ?, lease_until = NULL, " +
@@ -253,11 +294,18 @@ public class QueueDAO {
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = db.getConnection();
+            con = open();
             String q =
                     "UPDATE " + table +
                     "   SET lease_until = " + dialect.nowPlusSeconds() + " " +
-                    " WHERE id = ? AND owner = ? AND status = ?";
+                    " WHERE id = ? AND owner = ? AND status = ? " +
+                    // The lease itself, not just the ownership stamp. Without
+                    // this a worker whose lease ran out an hour ago is told it
+                    // still owns the task, right up until some other worker
+                    // happens to sweep - and sweeps only run between tasks, so
+                    // a fleet busy with long tasks runs none at all. This is
+                    // the fence; it has to test the thing it fences.
+                    "   AND lease_until > CURRENT_TIMESTAMP";
             ps = con.prepareStatement(q);
             ps.setInt(1, leaseSeconds);
             ps.setLong(2, id);
@@ -287,7 +335,7 @@ public class QueueDAO {
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = db.getConnection();
+            con = open();
             String q =
                     "UPDATE " + table +
                     "   SET status = ?, owner = NULL, started = NULL, lease_until = NULL, " +
@@ -320,7 +368,7 @@ public class QueueDAO {
         Connection con = null;
         PreparedStatement ps = null;
         try {
-            con = db.getConnection();
+            con = open();
             String q =
                     "UPDATE " + table +
                     "   SET status = ?, owner = NULL, started = NULL, finished = NULL, " +
@@ -330,6 +378,40 @@ public class QueueDAO {
             ps.setString(1, Queue.NEW);
             ps.setString(2, Queue.ERROR);
             ps.setString(3, ownerNode);
+            return ps.executeUpdate();
+        }
+        finally {
+            if (ps != null) try { ps.close(); } catch (Exception ignore) {}
+            if (con != null) try { con.close(); } catch (Exception ignore) {}
+        }
+    }
+
+
+    /**
+     * ERROR -&gt; NEW for every failed task, whoever failed it.
+     *
+     * The node-scoped {@link #requeueErrors(String)} is the automatic path, and
+     * it depends on the node id being the same as last time. That is fine for a
+     * fixed host and wrong for a container, whose hostname is its id and
+     * changes at every redeploy — leaving that worker's ERROR rows with no path
+     * out at all, because the node-scoped sweep is the only one. This is the
+     * operator's way back: deliberate, unscoped, and never called automatically.
+     *
+     * @return number of tasks re-queued
+     */
+    public int requeueAllErrors() throws Exception {
+        Connection con = null;
+        PreparedStatement ps = null;
+        try {
+            con = open();
+            String q =
+                    "UPDATE " + table +
+                    "   SET status = ?, owner = NULL, owner_node = NULL, started = NULL, " +
+                    "       finished = NULL, lease_until = NULL, not_before = NULL " +
+                    " WHERE status = ?";
+            ps = con.prepareStatement(q);
+            ps.setString(1, Queue.NEW);
+            ps.setString(2, Queue.ERROR);
             return ps.executeUpdate();
         }
         finally {
@@ -359,7 +441,7 @@ public class QueueDAO {
     public long put(String taskType, Long refId, String payload, String notBefore) throws Exception {
         Connection con = null;
         try {
-            con = db.getConnection();
+            con = open();
             return put(con, taskType, refId, payload, notBefore);
         }
         finally {
@@ -386,7 +468,13 @@ public class QueueDAO {
             if (refId == null) ps.setNull(2, Types.BIGINT); else ps.setLong(2, refId.longValue());
             ps.setString(3, payload);
             ps.setString(4, Queue.NEW);
-            ps.setString(5, notBefore);
+            // setTimestamp, not setString. PostgreSQL binds a String as
+            // varchar and refuses it ("column not_before is of type timestamp
+            // ... but expression is of type character varying"); Oracle applies
+            // the NLS date format and raises ORA-01861. Only MySQL is forgiving,
+            // and MySQL is the one dialect that gets tested here.
+            if (notBefore == null) ps.setNull(5, Types.TIMESTAMP);
+            else                   ps.setTimestamp(5, java.sql.Timestamp.valueOf(notBefore));
             ps.executeUpdate();
 
             rs = ps.getGeneratedKeys();
@@ -425,16 +513,25 @@ public class QueueDAO {
      * 1-based position of a waiting task among tasks of its type — the "2" in
      * "2 of 10". Tasks are taken in id order, so this is how many are ahead of
      * it, plus one.
+     *
+     * Counts only tasks that are actually due: one held back by not_before is
+     * not ahead of you in any sense you would want reported. Assumes the task
+     * you are asking about is itself still waiting — it does not check, so a
+     * DONE task reports the position it would have if it were not.
      */
     public int position(String taskType, long id) throws Exception {
         return count("SELECT 1 + COUNT(*) FROM " + table +
-                     " WHERE status = ? AND task_type = ? AND id < ?", taskType, Long.valueOf(id));
+                     " WHERE status = ? AND task_type = ? AND id < ?" +
+                     "   AND (not_before IS NULL OR not_before <= CURRENT_TIMESTAMP)",
+                     taskType, Long.valueOf(id));
     }
 
     /** How many tasks of this type are waiting — the "10" in "2 of 10". */
     public int pending(String taskType) throws Exception {
         return count("SELECT COUNT(*) FROM " + table +
-                     " WHERE status = ? AND task_type = ?", taskType, null);
+                     " WHERE status = ? AND task_type = ?" +
+                     "   AND (not_before IS NULL OR not_before <= CURRENT_TIMESTAMP)",
+                     taskType, null);
     }
 
     private int count(String q, String taskType, Long id) throws Exception {
@@ -442,7 +539,7 @@ public class QueueDAO {
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            con = db.getConnection();
+            con = open();
             ps = con.prepareStatement(q);
             ps.setString(1, Queue.NEW);
             ps.setString(2, taskType);

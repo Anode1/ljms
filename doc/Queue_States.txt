@@ -1,8 +1,7 @@
 Queue states (org.ljms):
 
 One table, N worker processes, no broker. A worker reads the oldest due task
-and claims it by compare-and-swap — "UPDATE ... WHERE queue_id = ? AND status =
-'NEW'" — then runs it and records the outcome. Whichever worker's UPDATE lands
+and claims it by compare-and-swap — "UPDATE ... WHERE id = ? AND status = 'NEW'" — then runs it and records the outcome. Whichever worker's UPDATE lands
 first owns the row; the others match 0 rows and read the head again. Plain SQL,
 no vendor extensions. This file is the spec: the character form below is
 parsed and checked mechanically (see "Formal correctness checks"), Queue.java
@@ -33,13 +32,20 @@ Character form (STATE = target[event]):
   ERROR       = NEW[restart]
   DONE        = terminal
 
-Formal correctness checks (decidable directly from the character form):
-  - every non-start state has an incoming edge         -> no unreachable state
+Checks the prover runs against this block (StateMachineTest):
+  - a start state exists                               -> the machine has an entry
+  - every state is reachable from start                -> no orphan state
   - every non-terminal state has an outgoing edge      -> no dead-end / stuck state
   - terminal states (DONE) have no outgoing edge       -> proper sink
   - no (state, event) pair maps to two targets         -> deterministic
   - at least one path leads from start to a terminal   -> non-empty
-All five hold for the current machine.
+All six hold for the current machine. They establish that this graph is well
+formed; they say nothing about whether the SQL implements it. Nothing checks
+that, which is what the behaviour tests are for.
+
+Also note: adding a state here fails testCodeAndSpecUseTheSameNames until
+Queue.java names it too. That is deliberate, but it means "add a state and it
+is checked automatically" is only true once the code agrees.
 
 What the graph checks cannot see (the liveness argument, by hand):
   The machine has two cycles, NEW -> IN_PROCESS -> NEW (^expire) and
@@ -58,7 +64,7 @@ Nothing is ever locked (the rule that keeps this scalable):
     - no transaction spanning the read and the update
     - no transaction spanning the work
     - no table locks, no advisory locks, no synchronized
-  "UPDATE ... WHERE queue_id = ? AND status = 'NEW'" is a compare-and-swap: the
+  "UPDATE ... WHERE id = ? AND status = 'NEW'" is a compare-and-swap: the
   affected-row count is the return value, 1 = won, 0 = lost. The only lock is
   the one the database takes inside that statement, released at statement end.
   So contention costs wasted attempts, never blocked waiters — the cost grows
@@ -116,9 +122,8 @@ States are names, not codes:
   covering every in-flight state once new ones were added.
 
 For future, not now:
-* Capacity gate (#351): publishing is admission-controlled by concurrent
-  participants. Fits without a new state — the worker checks headroom and, if
-  there is none, leaves the task NEW with not_before pushed out. No busy loop,
-  no extra state, and "2 of 10" stays truthful.
+* Admission control ("run no more than N at once"). Fits without a new state:
+  the worker checks headroom and, if there is none, leaves the task NEW with
+  not_before pushed out. No busy loop, no extra state. Not implemented.
 * Priority: a priority column plus one more ORDER BY term, if FIFO ever stops
   being enough. Not added on speculation.

@@ -1,37 +1,36 @@
-# LJMS: a queue that is one table
+# LJMS: a work queue that is one table
 
-**445 lines of Java. One table. No broker, no dependencies, no locks.**\
-*A queue is a state machine over rows. Everything else is packaging.*
+A durable work queue for Java: one database table, six source files, no broker and no runtime dependencies beyond the JDK and your JDBC driver.
 
-Most work queues arrive as infrastructure: a broker to install, monitor, back up, upgrade and page someone about at 3am. LJMS is a table in the database you already have, and a loop that polls it. You copy six files into your project, put your work in one empty method, and run as many workers as you like.
-
-It is a template, not a framework. There is no jar to depend on and no interface it makes you implement — you own the copy, and when you need it to do something different you edit it.
+It is a template rather than a library. You copy the files into your project, put your work in one empty method, and own the result — there is no jar to depend on and no interface it makes you implement.
 
 ```
 src/org/ljms/
-  Queue.java          46 lines   the four states
-  Task.java           31 lines   one row
-  Connections.java    28 lines   the one thing you supply
-  Dialect.java        40 lines   the entire portability surface: one SQL expression
-  QueueDAO.java      476 lines   the SQL
-  Processor.java     272 lines   the loop, with your work() in the middle
+  Queue.java          the four state names
+  Task.java           one row
+  Connections.java    the one thing you supply
+  Dialect.java        the two SQL expressions that differ between databases
+  QueueDAO.java       the SQL
+  Processor.java      the loop, with your work() in the middle
 ```
+
+About 1,100 lines including comments, ~510 excluding comments and blanks. Most of it is explanation.
 
 ## Quick start
 
 ```sh
-mysql mydb < sql/mysql.sql          # or postgres.sql / oracle.sql
-ant                                 # compile; JDK only
-ant prove                           # check the state machine (no database, 19ms)
+mysql mydb < sql/mysql.sql       # or postgres.sql / oracle.sql / mssql.sql
+ant                              # compile; JDK only
+ant prove                        # check the state machine (no database)
 ```
 
-Two things to edit, both marked `EDIT THESE`: the database constants at the top of `Processor.java`, and the ones in `QueueTests.java` if you want to run the tests. There is no properties file and no config class — every project already has a way of holding credentials, and a template that insists on its own just leaves you a layer to rip out.
+Three places are marked `EDIT THESE` — the database constants at the top of `Processor.java`, and the same in `QueueTests.java` and `Bench.java` if you want to run the tests or the benchmark. There is no properties file and no config class: every project already has a way of holding credentials, and a template that insists on its own just leaves you a layer to remove.
 
 Put your work in `Processor.work()`:
 
 ```java
 protected void work(Task task) throws Exception {
-    if ("PUBLISH_STUDY".equals(task.type)) publish(task.refId);
+    if ("SEND_REPORT".equals(task.type)) sendReport(task.refId);
     else throw new Exception("Unknown task type: " + task.type);
 }
 ```
@@ -40,17 +39,26 @@ Enqueue from anywhere:
 
 ```java
 Connections db = () -> DriverManager.getConnection(url, user, password);
-new QueueDAO(db).put("PUBLISH_STUDY", studyId, null);
+new QueueDAO(db).put("SEND_REPORT", reportId, null);
 ```
 
-Run a worker (`./queue.sh start`, cron, systemd, or in-process):
+Run a worker — `./queue.sh start`, from cron, from systemd, or in-process:
 
 ```java
 Processor worker = new Processor(db);
 worker.start();
 ```
 
-That is the whole API. `put`, `take`, `done`, `error` — the names `java.util.concurrent.BlockingQueue` already uses.
+On anything but MySQL, pass the dialect:
+
+```java
+QueueDAO queue = new QueueDAO(db, "QUEUE", Dialect.POSTGRES);
+Processor worker = new Processor(queue);
+```
+
+Your JDBC driver needs to be on the classpath; nothing here bundles one.
+
+The operations are `put`, `take`, `done`, `error`. The first two are the names `java.util.concurrent.BlockingQueue` uses; the other two have no equivalent there, because an in-memory queue has nothing to record. The rest of the surface — `extendLease`, `recoverExpired`, `requeueErrors`, `requeueAllErrors`, `position`, `pending`, `get` — you can ignore until you need it.
 
 ## The states
 
@@ -61,144 +69,134 @@ ERROR      = NEW[restart]
 DONE       = terminal
 ```
 
-### The prover
+That block in [`doc/Queue_States.txt`](doc/Queue_States.txt) is the specification, not a description of the code, and `ant prove` parses it and checks six properties of the graph: a start state exists, every state is reachable from start, every non-terminal has a way out, terminals are sinks, no `(state, event)` pair maps to two targets, and some path reaches a terminal. It needs no database and runs in about 25 ms.
 
-That block in [`doc/Queue_States.txt`](doc/Queue_States.txt) is not documentation of the code — it **is** the specification, and `ant prove` reads it:
-
-```
-$ ant prove
-OK (7 tests)      0.019s, no database
-```
-
-It parses the character form and checks six properties of the graph:
-
-| check | catches |
-| --- | --- |
-| a start state exists | a machine with no entry |
-| every state reachable from start | a state nothing can ever reach |
-| every non-terminal has an outgoing edge | a task that can get stuck forever |
-| terminals have no outgoing edge | a "final" state that isn't |
-| no (state, event) maps to two targets | non-determinism |
-| some path reaches a terminal | a machine no task can ever leave |
-
-Add a state to the doc and it is checked automatically — nobody has to think of the test case. A finite automaton is the tractable tier of the Chomsky hierarchy, so these are decidable properties of the graph, not opinions about it. This is the old discipline of drawing the state diagram and proving correctness before writing the code, except the diagram is machine-readable and the proof runs in CI.
-
-What it deliberately **cannot** see is liveness: the machine has cycles (`NEW → IN_PROCESS → NEW` on expiry, `ERROR → NEW` on restart) and reachability says nothing about termination. That argument is made by hand in the doc, and it rests on neither edge firing by itself — expiry needs a worker to die, restart needs a person. There is no automatic retry edge, which is exactly what would make the first cycle self-sustaining.
+Two limits on what that buys. It checks that a four-node graph is **well formed** — it does not verify that the SQL implements those edges and no others; that is what the behaviour tests are for. And it cannot see liveness: the machine has cycles (`NEW → IN_PROCESS → NEW` on lease expiry, `ERROR → NEW` on restart), and reachability says nothing about termination. That argument is made by hand in the doc, and it rests on neither edge firing by itself.
 
 ## Why
 
-**Nothing is ever locked.** Every transition is one predicated single-row `UPDATE` under autocommit:
+**Nothing is held across your code.** The claim and each outcome are single predicated `UPDATE`s under autocommit:
 
 ```sql
 UPDATE QUEUE SET status='IN_PROCESS', owner=? WHERE id=? AND status='NEW'
 ```
 
-That is a compare-and-swap — the affected-row count is the return value, 1 means you won, 0 means someone else did. No `SELECT ... FOR UPDATE`, no transaction spanning the read and the write, no transaction spanning the work, no table locks, no `synchronized`. The only lock is the one the database takes *inside* that statement, released at statement end.
+That is a compare-and-swap: the affected-row count is the return value, 1 means you won, 0 means someone else did. No `SELECT ... FOR UPDATE`, no transaction spanning the read and the write, no transaction spanning `work()`. The database still takes a row lock *inside* each statement — two workers CAS-ing the same row do serialize for that instant — but no lock is ever held while your code runs. (The two recovery sweeps are set-based `UPDATE`s; everything else is by primary key.)
 
-This is why you can run as many workers as you like. Contention costs wasted attempts, never blocked waiters, so the cost grows linearly with workers instead of collapsing past a threshold. The pattern it avoids — take a lock, do the work, commit — looks perfect in testing, where there is no contention, and convoys under real load: workers queue behind the leader, the pool drains, timeouts cascade, and by then it is structural.
+That is what lets worker count grow: contention costs wasted attempts rather than waiters queued behind application time. The failure it avoids is a lock held across the work — take lock, do the job, commit — which behaves perfectly in testing, where there is no contention, and convoys under load.
 
-**The race is actually tested.** `testRaceNoTaskTakenTwice` runs 8 workers against 200 tasks and asserts every task was handed out exactly once. It has been verified to fail: delete `AND status = ?` from the compare-and-swap and it reports ~200 duplicates — while **every other test in the suite still passes.** That is the shape of concurrency bugs, and why a queue you cannot run this test against is a queue you are guessing about.
+**Why not `SKIP LOCKED`?** `SELECT ... FOR UPDATE SKIP LOCKED` is the modern one-statement way to do this, it is what most current "queue in a table" designs use, and on PostgreSQL, Oracle or MySQL 8 it is a good answer — arguably better under heavy contention, since workers never collide on the same head row. LJMS does not use it for two reasons: it would be a third vendor-specific construct (MySQL 5.7 and older MariaDB lack it), and it holds a transaction open across the claim. If you are on one database and staying there, consider it instead.
 
-**No automatic retries.** A task that fails goes to `ERROR` and stays there: one failure, one log line, one row to look at. Retry loops multiply one problem across the log and hide how many distinct problems there are. The fix is a human fix — to the code or to the data — and restarting the worker is the retry: startup returns that worker's `ERROR` rows to `NEW`. Meanwhile the queue flows past a parked task instead of stalling on it.
+**The race is tested.** `testRaceNoTaskTakenTwice` runs 8 workers against 200 tasks and asserts every task was handed out exactly once. It has been checked by deliberately breaking the code: remove `AND status = ?` from the compare-and-swap and it reports hundreds of duplicates, while every other test in the suite still passes. That asymmetry is the point — a concurrency bug is invisible to tests that do not run concurrently.
 
-**Recovery is by lease, not by owner.** Taking a task sets `lease_until`; a row still `IN_PROCESS` past its lease is presumed abandoned and returned to `NEW` by whichever worker notices. One timestamp comparison, and it covers three cases owner-matching cannot: a dead worker's tasks come back without waiting for that host to return under the same name; two workers sharing a node id cannot steal each other's in-flight rows; and when the *database* is what failed, a worker cannot write "put me back" anywhere — the lease expires on its own.
+**No automatic retries.** A failed task goes to `ERROR` and stays there: one failure, one log line, one row. A retry loop multiplies a single problem across the log and hides how many distinct problems there are. Restarting the worker is the retry — startup returns that worker's `ERROR` rows to `NEW`, on the assumption someone restarted it because they fixed the cause. Meanwhile the queue flows past a parked task instead of stalling on it.
 
-**Delivery is at-least-once.** A worker that is slow rather than dead can lose its lease and have its task run twice. Make tasks idempotent, or fence them with `extendLease()`, which returns false once the lease is gone. LJMS says this out loud rather than implying exactly-once, which no queue with a network in it can honestly offer.
+**Recovery is by lease, not by owner.** Taking a task sets `lease_until`; a row still `IN_PROCESS` past its lease is returned to `NEW` by whichever worker notices. One timestamp comparison, and it covers three cases owner-matching does not: a dead worker's tasks come back without that host returning under the same name; two workers sharing a node id cannot take each other's in-flight rows; and when the *database* is what failed, a worker cannot write "put me back" anywhere.
 
-**States are names, not codes.** `NEW`, `IN_PROCESS`, `DONE`, `ERROR` — the same symbol in the spec, the constant, the SQL literal and the table, so `SELECT status, COUNT(*) ... GROUP BY status` answers the question without the source. Numeric codes need two mappings that can drift, and they hide errors: this design descends from one that used them, and whose recovery swept a hand-written list — `('90','02','81','82','86','19')` — that silently stopped covering every in-flight state once new ones were added. Nobody reviewing that line could see what was missing.
+**Delivery is at-least-once.** A worker that is slow rather than dead can lose its lease and have its task run twice. Make tasks idempotent, or fence them with `extendLease()`, which returns false once the lease is gone. No queue with a network in it can offer exactly-once.
+
+**States are names, not codes.** `NEW`, `IN_PROCESS`, `DONE`, `ERROR` — the same token in the spec, the constant, the SQL and the table, so `SELECT status, COUNT(*) ... GROUP BY status` answers the question without the source. This design descends from one that used numeric codes, whose recovery swept a hand-written list — `('90','02','81','82','86','19')` — that quietly stopped covering every in-flight state once new ones were added. Nobody reviewing that line could see what was missing.
 
 ## Performance
 
-**First, the honest framing: in the projects this is for, the queue is never the bottleneck and the database is mostly idle.** A task that runs for minutes — a model run, an import, a publish — carries about 2 ms of queue overhead. That is 0.001% of the task. These numbers are not for capacity planning; they are for deciding whether you have outgrown the design. If your tasks are shorter than the queue overhead, you have.
+In the workloads this is built for, the queue is not the bottleneck and the database is mostly idle: a task that runs for minutes carries a few milliseconds of queue overhead. These numbers answer one question — are your tasks short enough that the queue itself would matter?
 
-Reproducible, not asserted — `ant bench` runs it on your own hardware. One task here is `take()` + `done()`: one SELECT and two UPDATEs with *no work in between*, so it measures the queue's own overhead and nothing else — a ceiling you will never approach in production.
+`ant bench` reproduces them on your own hardware. One task is `take()` + `done()`: one SELECT and two UPDATEs, with no work in between.
 
-Intel i7-1165G7, MySQL 8.0.46, JDK 21, local SSD, default `innodb_flush_log_at_trx_commit=1`:
+Intel i7-1165G7, MySQL 8.0.46, JDK 21, local SSD, `innodb_flush_log_at_trx_commit=1`:
 
-| workers | tasks/sec (direct) | tasks/sec (pooled) |
+| workers | connection per call | connection reused per thread |
 | --- | --- | --- |
-| 1 | 83 | 269 |
+| 1 | 83 tasks/sec | 269 |
 | 2 | 179 | 394 |
-| 4 | 291 | **412** |
+| 4 | 291 | 412 |
 | 8 | 295 | 365 |
 
-Three things that table says, more useful than the numbers themselves:
+The second column is not a real pool — one connection per thread, never returned — so read it as an upper bound on what pooling can buy.
 
-**Connection setup dominates if you let it.** A bare `DriverManager` connect costs ~11 ms here, and LJMS opens one per operation. Handing it a pooled `Connections` is a one-line lambda and roughly triples throughput. That is why `Connections` is an interface and not a URL.
+**Connection setup is the first thing you hit.** A `DriverManager` connect costs ~11 ms here, and LJMS opens one per operation, two per task. Reusing connections roughly triples single-worker throughput (83 → 269); at four workers the gap narrows to about 1.4×.
 
-**The floor is durability, not SQL.** Even pooled, ~2.4 ms per task is mostly two commits — the claim and the outcome — and a commit is an fsync. You cannot go below two durable writes per task and still know, after a crash, whether the task ran. Batching claims (take N, one commit) is the only real lever, and it trades exactly that knowledge.
+**Below that, the floor is durability.** A task commits twice — the claim and the outcome — and a commit is an fsync. Single-worker reused-connection latency is ~3.7 ms, most of it those two commits. You cannot go below two durable writes per task and still know, after a crash, whether the task ran. Batching claims is the only real lever, and it trades exactly that knowledge.
 
-**Contention costs, but does not collapse.** Eight workers are slower than four: they read the same head row, and the losers retry. Throughput sags; nothing blocks, nothing times out, nothing cascades. A design that holds a lock across the work does not sag there — it falls over, and only in production.
-
-If you need thousands of tasks a second, use a broker. If you need hundreds — or, as is far more common, tens of tasks that each take minutes — this is a table.
+**Contention costs but does not collapse.** Eight workers are slower than four: they read the same head row and the losers retry. Throughput sags; nothing blocks across application code and nothing cascades. Four data points is not a scaling curve — measure your own.
 
 ## When it fits
 
 **Good fit**
-- Anything already backed by a relational database, where a broker would be the only new piece of infrastructure.
-- Work measured in seconds to hours, at tens to thousands of tasks a day: publishing, imports, report generation, model runs, batch jobs, sending mail.
-- Sequencing and admission control — "run these one at a time", "not more than N at once", "start this at 2am" — which `not_before` and a one-line capacity check handle without a scheduler.
-- Small teams with nobody to operate a broker, and anyone who has to be able to answer "what is the queue doing?" with a `SELECT`.
-- Regulated or audited work, where every state change being a visible row with a timestamp is worth more than throughput.
+
+- Anything already backed by a relational database, where a broker would be the only new infrastructure.
+- Work measured in seconds to hours, at tens to thousands of tasks a day: publishing, imports, report generation, model runs, batch jobs, mail.
+- Sequencing and delayed execution — "one at a time", "start this at 2 a.m." — which `not_before` handles without a scheduler.
+- Teams with nobody to operate a broker, and anyone who needs to answer "what is the queue doing?" with a `SELECT`.
+- Audited work, where every state change being a visible row with a timestamp matters more than throughput.
 
 **Bad fit**
-- Thousands of messages a second — polling and per-task commits are the wrong shape; use a broker.
-- Fan-out, pub/sub, topics, replay, or many consumers per message. LJMS hands each task to exactly one worker.
-- Sub-second latency requirements: a poll interval is a poll interval. You can shorten it, but that is load, not a design.
-- No database, or a database you must not add a table to.
+
+- Thousands of messages a second. Polling and per-task commits are the wrong shape.
+- Fan-out, pub/sub, topics, replay, or many consumers per message. Each task goes to exactly one worker.
+- Sub-second latency. A poll interval is a poll interval.
+- No database, or one you cannot add a table to.
+
+## Status
+
+Read this before depending on it. The *design* has a long history; this implementation does not.
+
+- Tested against **MySQL only**. The PostgreSQL, Oracle and SQL Server dialects are transcribed from documentation and have never been run. If you run one, please say so.
+- **No CI.** The behaviour tests need a database and which one is your decision; `ant prove` needs none and could be wired up trivially.
+- As published, **this code has not run in production.** Its ancestors have. The lease, the portable SQL, the specification and the tests are all new here — which is to say, the parts most likely to be wrong are the new ones.
+- Oracle needs one source edit beyond the dialect: its JDBC driver wants the generated-key column named. See `sql/oracle.sql`.
+- `lib/junit.jar` is JUnit 3.8, CPL-licensed, used by the tests only. Nothing in `src/` depends on it.
 
 ## Questions
 
 **Why not RabbitMQ, Kafka, or SQS?**
-Because they are a service, and you already run a database. A broker means another thing to install, secure, monitor, back up, upgrade and be paged about, plus the operational question of what happens when your queue and your data disagree. LJMS is in the same transaction domain as your data: enqueueing a task and the work that justifies it can share one commit. If you need fan-out, topics, cross-datacentre replication or a million messages a second, use a broker — that is what they are for. If you need "run these jobs, one at a time, and do not lose them", this is a table.
+A different trade for each. A self-hosted broker is infrastructure to install, secure, monitor, back up and upgrade. SQS has none of that — its cost is a second system of record: queue state lives where you cannot join it against your data, cannot enqueue inside the transaction that justifies the task, and cannot inspect it with SQL. LJMS is in the same transaction domain as your data. If you need fan-out, topics, replay or very high throughput, use a broker; that is what they are for.
 
 **Why not Quartz, db-scheduler, or JobRunr?**
-They are good, and they are schedulers with a queue inside, framework-shaped and usually Spring-oriented. LJMS is the queue without the scheduler, and small enough to read in one sitting — which matters more than features when the thing goes wrong at 3am and you have to reason about state you cannot see.
+db-scheduler is the closest thing to this and a reasonable alternative: also a table and a poller, more featureful, actively maintained, and a real dependency rather than a copy. Quartz is a scheduler with persistence attached, heavier than most people need for "run these jobs". JobRunr is a job-processing system with a dashboard. The case for LJMS over any of them is that you can read all of it and there is nothing to upgrade.
 
 **Why not `java.util.concurrent`?**
-Because that queue dies with the JVM. LJMS survives a restart, a crash, and a machine, because the queue is a table.
+Those queues die with the JVM. This one survives a restart, a crash and a machine, because it is a table.
 
 **Is polling not wasteful?**
-Yes, and it is unavoidable here — that is the honest trade. A broker can block you in the kernel (`epoll`) until a message arrives and wake you with zero wasted work; a database has no such doorbell, so a worker has to ask. What you pay is one indexed `SELECT` per worker per interval. What you get is no listener to keep alive, no reconnect logic, no message lost on a dropped connection, and a worker you can `kill -9` at any instant without consequence, because it holds nothing. At the scale where the polling itself is a real cost, you have outgrown this design.
+Somewhat, and that is the trade. A broker lets you block in the kernel until a message arrives; MySQL has no equivalent. PostgreSQL does have `LISTEN`/`NOTIFY` and Oracle has AQ — LJMS uses neither, because each would be another vendor-specific path and a listener to keep alive. What you pay is one indexed `SELECT` per worker per interval. What you get is no listener, no reconnect logic, no message lost on a dropped connection, and a worker you can `kill -9` without losing the task — it is re-run once its lease expires.
 
 **Only one task at a time per worker?**
-Yes, and it is deliberate: it makes the state machine four states instead of a concurrency model. Want more parallelism? Start more workers. They coordinate through the table and hold nothing, which is the entire point.
+Yes, deliberately: it keeps the machine four states rather than a concurrency model. For more parallelism, start more workers.
 
-**Is 445 lines not too small to trust?**
-It is small enough to *read*, which is a stronger form of trust than "it is popular". The design has been in production a long time — the ancestor of this queue has run Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. What is new here is the refinement: the lease, the portable SQL, the specified state machine, and the tests. Those are the parts the originals did not have, and writing them found real bugs in both the originals and this rewrite.
-
-**Which databases?**
-MySQL, PostgreSQL, Oracle and SQL Server ship in `Dialect`. Everything else is plain SQL — the only thing the standard leaves to vendors is date arithmetic, so it lives in that one enum. Adding a database is one line, not an abstraction layer. (Only MySQL is covered by a CI-run test today; the others are transcribed and unrun. Say so in an issue if you run one.)
+**Is it small enough to trust?**
+Small enough to read, which is not the same thing — 1,100 lines is still a couple of hours. And the production history belongs to the ancestors, not to this code. See Status.
 
 ## Layout
 
 ```
 src/          the six files you copy
 test/         StateMachineTest (the prover), QueueTests (behaviour + race), Bench
-sql/          mysql.sql, postgres.sql, oracle.sql
+sql/          mysql · postgres · oracle · mssql
 doc/          Queue_States.txt  — the specification the prover reads
               development.txt   — internals, invariants, porting, design notes
-legacy/       the original LJMS: a P2P light queue, kept for its history
+legacy/       about the 2001 original; its source is not published here
 queue.sh      start | run | stop | status
 ```
 
-Run the tests against a **scratch** database — they drop and recreate the table on every test method:
-
 ```sh
-ant test        # after setting the DB constants at the top of QueueTests.java
+ant test        # behaviour + race, against a scratch database
+ant bench       # throughput
 ```
+
+Both drop and recreate the table on every run — point them at a database you do not care about.
 
 ## History
 
-The first LJMS, in 2001, was a small open-source library with an in-memory queue. Different mechanism entirely — the queue lived in the process — but the same idea: a unit of work carries its own state, and whichever worker is free takes the next one. It happened to predate Sun's JMS, which is where the name came from; it is kept here for continuity, not as any sort of claim. That original is in [`legacy/`](legacy/).
+The first LJMS, in 2001, was a small open-source library with an in-memory queue. Different mechanism — the queue lived in the process — but the same idea: a unit of work carries its own state, and whichever worker is free takes the next one. The name is a nod to JMS, which it postdates by some years.
 
-The idea has since carried four production systems, and this is the fourth pass at it: the version that moves the queue into a table, where it survives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. What is new here is the lease, the portable SQL, the specification with a prover, and the tests — writing which found real bugs in both the ancestors and this rewrite.
+The idea has since carried four production systems, and this is the fourth pass at it: the one that moves the queue into a table, where it outlives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five.
 
-The shape is much older than any of it. A mainframe job queue — JES on z/OS — does the same thing: work sits on a queue in an explicit state, an operator can see it, a failed job is *held* for a person rather than retried blindly, and killing the address space loses nothing because the state of the work is data rather than process memory. That last property is most of why those systems are so hard to kill, and it is the one worth copying. Everything that loses work on restart — in-memory queues, actor mailboxes, thread pools — keeps the state of the work inside the process doing the work.
+The shape is much older. A mainframe job queue — JES on z/OS — works the same way: work sits in an explicit state where an operator can see it, a failed job is *held* for a person rather than retried blindly, and killing the address space loses nothing, because the state of the work is data rather than process memory. That last property is most of why those systems are hard to kill, and it is the one worth copying.
 
 ## Related
 
-Part of a family of deliberately thin tools: [ais](https://github.com/Anode1/ais) (associative index, plain text instead of a database), [agent-recipes](https://github.com/Anode1/agent-recipes) (practices for working with coding agents). The common thread is that a small thing you can read beats a large thing you must trust.
+[ais](https://github.com/Anode1/ais) — an associative index in plain text. [agent-recipes](https://github.com/Anode1/agent-recipes) — practices for working with coding agents.
 
 ## Licence
 

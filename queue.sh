@@ -14,6 +14,12 @@
 # Pass a node name only if you run more than one worker on this host.
 LJMS_NODE="${LJMS_NODE:-}"
 
+# Everything below is relative to the repository, and cron runs with cwd=$HOME,
+# so anchor to this script's own directory or "start from cron" quietly starts
+# nothing at all: -cp build would resolve under $HOME, java would exit with
+# ClassNotFoundException, and the pid written below would already be dead.
+cd "$(dirname "$0")" || exit 1
+
 PIDFILE=logs/queue.pid
 LOGFILE=logs/queue.out
 

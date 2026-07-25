@@ -193,20 +193,46 @@ public class QueueTests extends TestCase {
                      fresh, task.id);
     }
 
-    /** extendLease() moves the lease out, and doubles as the fence once it is lost. */
+    /** extendLease() moves a live lease out. */
     public void testExtendLease() throws Exception {
 
         long id = queue.put(TYPE, 0L, null);
         queue.take(OWNER, NODE, LEASE);
 
-        sql("UPDATE QUEUE SET lease_until = '2000-01-01 00:00:00' WHERE id = " + id);
-        String expired = col(id, "lease_until");
+        String before = col(id, "lease_until");
+        Thread.sleep(1100);                       // DATETIME resolution is a second
 
         assertEquals(1, queue.extendLease(id, OWNER, LEASE));
-        assertFalse("the lease should have moved", expired.equals(col(id, "lease_until")));
+        assertFalse("the lease should have moved", before.equals(col(id, "lease_until")));
+    }
 
-        assertEquals("extendLease is the fence - it must fail once the lease is lost",
-                     0, queue.extendLease(id, "impostor 2026-01-01 00:00:00.000", LEASE));
+    /**
+     * extendLease() is the fence for irreversible work, so it has to fail once
+     * the lease is gone — not merely once someone else has swept the row.
+     *
+     * The previous version of this test forced lease_until into the past and
+     * asserted extendLease returned 1, which is what the code did and the
+     * opposite of what every doc promised. A test can pin a bug as firmly as
+     * it can catch one.
+     */
+    public void testExtendLeaseFailsOnAnExpiredLease() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+        queue.take(OWNER, NODE, LEASE);
+
+        sql("UPDATE QUEUE SET lease_until = '2000-01-01 00:00:00' WHERE id = " + id);
+
+        assertEquals("the lease has expired, even though nothing has swept the row yet",
+                     0, queue.extendLease(id, OWNER, LEASE));
+    }
+
+    /** And it must fail for anyone who never held the lease. */
+    public void testExtendLeaseFailsForTheWrongOwner() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+        queue.take(OWNER, NODE, LEASE);
+
+        assertEquals(0, queue.extendLease(id, "impostor 2026-01-01 00:00:00.000", LEASE));
     }
 
     /**
@@ -296,6 +322,36 @@ public class QueueTests extends TestCase {
                    col(id, "error").contains("bad data"));
     }
 
+    /**
+     * An Error out of work() must still park the row before the worker dies.
+     *
+     * If it does not, the row keeps its lease, returns to NEW when the lease
+     * expires, keeps its id and so becomes the head of the queue again — and
+     * kills the next worker that takes it. One poison task would stop the
+     * whole queue and every worker in turn, with cron restarting them into it.
+     */
+    public void testProcessorParksATaskThatThrowsAnError() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+
+        Processor worker = new Processor(queue) {
+            protected void work(Task task) throws Exception {
+                throw new StackOverflowError("simulated");
+            }
+        };
+        worker.node = NODE;
+
+        try {
+            worker.process(queue.take(worker.owner(), NODE, LEASE));
+            fail("an Error must reach the caller - a worker in that state should stop");
+        }
+        catch (StackOverflowError expected) { /* the worker dies, as it should */ }
+
+        assertEquals("but the row must be parked first, or it poisons every worker",
+                     Queue.ERROR, col(id, "status"));
+        assertNull("and it must not still hold a lease", col(id, "lease_until"));
+    }
+
     /** "2 of 10" — position counts only waiting tasks of the same type. */
     public void testPositionAndPending() throws Exception {
 
@@ -303,8 +359,10 @@ public class QueueTests extends TestCase {
         long b = queue.put(TYPE, 0L, null);
         long c = queue.put(TYPE, 0L, null);
         queue.put("OTHER_TYPE", 0L, null);              // must not be counted
+        queue.put(TYPE, null, null, "2099-01-01 00:00:00");   // nor must one not yet due
 
-        assertEquals(3, queue.pending(TYPE));
+        assertEquals("a task held back by not_before is not ahead of anyone",
+                     3, queue.pending(TYPE));
         assertEquals(1, queue.position(TYPE, a));
         assertEquals(2, queue.position(TYPE, b));
         assertEquals(3, queue.position(TYPE, c));
@@ -340,14 +398,18 @@ public class QueueTests extends TestCase {
             Thread worker = new Thread() {
                 public void run() {
                     try {
-                        // take() returns null both for "empty" and for "lost every
-                        // retry", so only give up after several empties in a row.
-                        int emptyInARow = 0;
-                        while (emptyInARow < 10) {
+                        // take() returns null both for "empty" and for "lost
+                        // every retry", so a null is not proof the queue is
+                        // drained. Ask the table before giving up, or eight
+                        // threads colliding on the last few rows can end the
+                        // run early and fail an assertion that is not wrong.
+                        while (true) {
                             Task task = queue.take(owner, node, LEASE);
-                            if (task == null) { emptyInARow++; continue; }
-                            emptyInARow = 0;
-
+                            if (task == null) {
+                                if (queue.pending(TYPE) == 0) break;
+                                Thread.sleep(5);
+                                continue;
+                            }
                             taken.add(Long.valueOf(task.id));
                             queue.done(task.id, owner);
                         }
@@ -358,7 +420,11 @@ public class QueueTests extends TestCase {
             workers.add(worker);
             worker.start();
         }
-        for (Thread worker : workers) worker.join(120000);
+        for (Thread worker : workers) {
+            worker.join(120000);
+            assertFalse("a worker thread hung; the counts below would be read while it "
+                      + "was still running", worker.isAlive());
+        }
 
         assertTrue("worker threads failed: " + failed, failed.isEmpty());
 

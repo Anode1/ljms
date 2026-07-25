@@ -84,6 +84,14 @@ public class Processor {
     /** Consecutive failed cycles before the worker gives up and exits. */
     public int maxErrors = 10;
 
+    /**
+     * How long a shutdown waits for the task in hand to finish. Past this the
+     * JVM stops anyway and the task's lease expires, so another worker will
+     * take it — keep it comfortably above a typical task, and keep queue.sh's
+     * own patience above this.
+     */
+    public long shutdownWaitMs = 55000;
+
     /** Set by {@link #stop}, or by the shutdown hook {@link #main} installs. */
     private volatile boolean terminating;
 
@@ -104,7 +112,15 @@ public class Processor {
      */
     protected String owner() {
         if (owner == null) {
-            owner = node + " " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date());
+            // The random tail is not decoration. Two JVMs sharing a node id -
+            // the default, since it is the hostname - and starting in the same
+            // millisecond would otherwise get the same token, and so would one
+            // restarted across a clock step back. Identical tokens mean a
+            // stalled worker's error() can match a live sibling's claim and
+            // park a task the sibling is still running.
+            owner = node + " "
+                  + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()) + " "
+                  + Long.toHexString(new java.security.SecureRandom().nextLong() >>> 40);
         }
         return owner;
     }
@@ -239,18 +255,34 @@ public class Processor {
                 log.info("Finished id=" + task.id);
             }
         }
-        catch (Exception e) {
+        catch (Throwable t) {
+            // Throwable, not Exception. An Error - OutOfMemory, StackOverflow,
+            // NoClassDefFound, all reachable from work() - would otherwise pass
+            // straight through, leaving the row IN_PROCESS holding a live
+            // lease. After the lease expired it would return to NEW keeping its
+            // id, become the head of the queue again, and kill the next worker
+            // that took it. One poison task would stop the whole queue and
+            // every worker in turn, with cron restarting them into it forever.
+            //
             // One failure, one log line, one terminal row. No retry.
             log.log(Level.SEVERE, "Failed id=" + task.id + " type=" + task.type
-                  + " - parked in " + Queue.ERROR + "; fix and restart the worker to retry", e);
+                  + " - parked in " + Queue.ERROR + "; fix and restart the worker to retry", t);
             try {
-                queue.error(task.id, owner(), e.getClass().getSimpleName() + ": " + e.getMessage());
+                if (queue.error(task.id, owner(), t.getClass().getSimpleName() + ": " + t.getMessage()) == 0) {
+                    log.warning("id=" + task.id + " failed, but the lease was already lost - "
+                              + "the failure is not recorded on the row and another worker has it");
+                }
             }
             catch (Exception e2) {
                 // The database went away while recording the outcome. The row
                 // stays IN_PROCESS and its lease expiry will free it.
                 log.log(Level.SEVERE, "Could not record the failure of id=" + task.id, e2);
             }
+
+            // A worker that has hit an Error is not in a fit state to carry on.
+            // Let it die - but only now that the task is parked, so nothing
+            // else dies on the same one.
+            if (t instanceof Error) throw (Error) t;
         }
     }
 
@@ -288,10 +320,27 @@ public class Processor {
             final Processor worker = new Processor(db);
             if (args.length > 0) worker.node = args[0];
 
+            // The hook must WAIT for the worker, not just ask it to stop. A JVM
+            // runs its shutdown hooks and then halts as soon as they return —
+            // it does not wait for other threads. A hook that only sets the
+            // flag would let SIGTERM destroy the worker in the middle of
+            // work(), leaving the row IN_PROCESS holding a live lease, so an
+            // ordinary deliberate stop would strand a task for the full lease
+            // and half-perform its side effects. That is the failure the lease
+            // exists to handle for crashes, and there is no reason to inflict
+            // it on a planned shutdown.
+            final Thread workerThread = Thread.currentThread();
             Runtime.getRuntime().addShutdownHook(new Thread() {
                 public void run() {
-                    worker.stop();
                     log.info("Shutdown requested - finishing the task in hand...");
+                    worker.stop();
+                    try { workerThread.join(worker.shutdownWaitMs); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    if (workerThread.isAlive()) {
+                        log.warning("Task did not finish within " + worker.shutdownWaitMs
+                                  + " ms; stopping anyway. Its lease will expire and another "
+                                  + "worker will take it — make sure it is idempotent.");
+                    }
                 }
             });
 
