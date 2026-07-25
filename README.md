@@ -331,7 +331,7 @@ The shape it borrows from is JES, the job queue on z/OS. See [Why](#why).
 
 ## Related
 
-[**iac**](https://github.com/Anode1/iac) is the closest relative: also a queue, of messages between agents on one machine, and also dependency-free plain files with no daemon. It is the interesting contrast, because it can do the thing LJMS cannot. A message board is a file, so a reader can block on `inotify` and be woken by the kernel the moment something lands, at zero CPU while it waits. A table is not a file you can watch, so LJMS has to ask. Same instinct, opposite constraint, and the two compose if the polling interval ever matters (see [Is polling not wasteful?](#questions)).
+[**iac**](https://github.com/Anode1/iac) is the closest relative: also a queue, of messages between agents on one machine, and also dependency-free plain files with no daemon. It is the interesting contrast, because it can do the thing LJMS cannot. A message board is a file, so a reader can block on `inotify` and be woken by the kernel the moment something lands, at zero CPU while it waits. A table is not a file you can watch, so LJMS has to ask. The two compose if the polling interval ever matters (see [Is polling not wasteful?](#questions)).
 
 [**ais**](https://github.com/Anode1/ais) is an associative index in plain text. Not a queue; related by disposition rather than mechanism: keep the store readable, own the format, add no engine you have to trust.
 
