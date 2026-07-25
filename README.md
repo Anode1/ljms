@@ -339,4 +339,9 @@ The shape it borrows from is JES, the job queue on z/OS. See [Why](#why).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT, except `legacy/`, which is GPL v2. See [LICENSE](LICENSE) and
+[legacy/LICENSE](legacy/LICENSE).
+
+`legacy/` is the 2001 program, an archive kept beside a rewrite. It shares no
+code with `src/`, so if you are copying the queue you are copying MIT code and
+can leave `legacy/` behind.
