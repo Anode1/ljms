@@ -1,8 +1,26 @@
-# LJMS: a work queue that is one table
+# ljms - a work queue that is one table
 
-A durable work queue for Java: one database table, six source files, no broker and no runtime dependencies beyond the JDK and your JDBC driver.
+A tiny, dependency-free work queue that gives a web application the one thing it lacks: **somewhere to put the slow work**.
 
 ![A deck of punch cards, one lifted clear of the stack](doc/img/job_queue.png)
+
+A request cannot wait for a report to render or a model to run, so the work has to go somewhere and something has to pick it up. The usual answer is a broker: a service to install, secure, monitor, back up and upgrade, holding a second copy of your state where you cannot join it against your own data. `ljms` is one table in the database you already have, and a loop that polls it. Everything under it is the boring, proven part: a status column, an owner, a lease, and four state names you can read straight out of a `SELECT`. No broker, no daemon, no dependencies beyond the JDK and a JDBC driver. None of it is new: it is essentially a JES job queue on z/OS, an operator's spool of work held as data rather than as process memory, pointed at web applications instead of batch decks.
+
+This isn't a messaging idea; it's an **optimistic locking** idea. Anyone who has written lock-free code knows the shape: do not take a lock, read a value and swap in a new one only if it has not changed since, and if somebody beat you to it, read again. `UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is that compare-and-swap, and the affected-row count is its answer. Contention costs a wasted attempt rather than a blocked worker, which is why you can add workers without them queueing behind each other. `ljms` is that one instinct, applied to a table.
+
+```
+COMPARE-AND-SWAP  (concurrent code)       OPTIMISTIC LOCKING  (any database)
+------------------------------------      -----------------------------------
+  old = load(addr)                          task = SELECT ... WHERE status='NEW'
+      |                                         |
+  new = f(old)                              claim it for this worker
+      |                                         |
+  CAS(addr, old, new)                       UPDATE ... WHERE id=? AND status='NEW'
+      |                                         |
+  succeeded? -> it is yours                 1 row  -> it is yours
+  failed?    -> somebody else won,          0 rows -> somebody else won,
+                read again and retry                  read again and retry
+```
 
 It is a template rather than a library. You copy the files into your project, put your work in one empty method, and own the result. There is no jar to depend on and no interface it makes you implement.
 
@@ -174,29 +192,9 @@ Two limits on what that buys. It checks that the graph is **well formed**, it do
 
 ## Why
 
-This is not a messaging idea, and it is not new. It already has a name in two different fields.
+The lock is half the idea. The other half is much older. A mainframe job queue keeps the state of the work in the spool rather than in the process doing the work, and everything follows from that: an operator can see it, a failed job is *held* for a person instead of being retried into the ground, and killing the address space loses nothing. It is most of why those systems are hard to kill, and it is exactly the property every in-memory queue, actor mailbox and thread pool gives away: they keep the state of the work inside the thing most likely to die.
 
-Database people call it **optimistic locking**: instead of locking a row while you decide what to do with it, you read it, and when you write you make the write conditional on it not having changed. If it did change, your update matches nothing and you start over. Concurrent-programming people call the same idea **compare-and-swap**: read a value, compute a new one, and swap it in only if the old one is still there.
-
-`UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is both descriptions of one statement. The row is the word, `AND status='NEW'` is the comparand, and the affected-row count is the return value, 1 you won, 0 somebody else did. Contention costs a wasted attempt rather than a blocked worker, so the cost grows with the number of contenders instead of falling off a cliff past some threshold. The database performs the atomic part, which is the one thing every database is unambiguously good at.
-
-The other half is much older. A mainframe job queue keeps the state of the work in the spool rather than in the process doing the work, and everything follows from that: an operator can see it, a failed job is *held* for a person instead of being retried into the ground, and killing the address space loses nothing. It is most of why those systems are hard to kill, and it is exactly the property every in-memory queue, actor mailbox and thread pool gives away: they keep the state of the work inside the thing most likely to die.
-
-Put the two together and there is not much left to build. The queue is a table, the lock is a `WHERE` clause, and the broker is a loop. What usually arrives as infrastructure, a service to install, secure, monitor, back up and upgrade, is a state machine over rows once you stop paying for the parts you were not using.
-
-```
-COMPARE-AND-SWAP  (concurrent code)       OPTIMISTIC LOCKING  (any database)
-------------------------------------      -----------------------------------
-  old = load(addr)                          task = SELECT ... WHERE status='NEW'
-      |                                         |
-  new = f(old)                              claim it for this worker
-      |                                         |
-  CAS(addr, old, new)                       UPDATE ... WHERE id=? AND status='NEW'
-      |                                         |
-  succeeded? -> it is yours                 1 row  -> it is yours
-  failed?    -> somebody else won,          0 rows -> somebody else won,
-                read again and retry                  read again and retry
-```
+Put the two together and there is not much left to build. The queue is a table, the lock is a `WHERE` clause, and the broker is a loop.
 
 ## Design
 
