@@ -72,7 +72,7 @@ The operations are `put`, `take`, `done`, `error`. The first two are the names `
                                     DONE / ERROR           ◄──done()/error()
 ```
 
-Enqueueing is one call from a servlet. **Showing status is a plain `SELECT`** — there is no client library to install and no second system to reconcile, because the queue is a table in the database your web tier already talks to.
+Enqueueing is one call from a servlet. **Showing status is a plain `SELECT`** — there is no client library to install and no second system to reconcile, because the queue is a table in the database your web tier already talks to. This is how every production ancestor of this code was arranged (see [History](#history)): the web put work in and rendered its progress, while separate worker processes did the work.
 
 One task, for a status endpoint:
 
@@ -270,7 +270,9 @@ Both drop and recreate the table on every run — point them at a database you d
 
 The first LJMS, in 2001, was a small open-source library implementing the JMS interface over an in-memory queue — hence the name. Different mechanism from this one, since the queue lived in the process and did not survive a restart, but the same idea underneath: a unit of work carries its own state, and whichever worker is free takes the next one.
 
-The idea has since carried four production systems, and this is the fourth pass at it: the one that moves the queue into a table, where it outlives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five.
+The author has built this shape four times since, in systems that have between them been running for decades — the direct ancestor has processed Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. Every one of them was arranged the way the section above describes: a web tier put the work in and showed each task's status from the same table, while separate worker processes took the tasks and ran them. Long jobs, minutes to hours, with users watching progress on a page.
+
+This is the fourth pass at it, and the one that moves the queue into a table where it outlives the process.
 
 The shape it borrows from is JES, the job queue on z/OS — see [Why](#why).
 
