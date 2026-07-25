@@ -2,6 +2,8 @@
 
 A durable work queue for Java: one database table, six source files, no broker and no runtime dependencies beyond the JDK and your JDBC driver.
 
+![A deck of punch cards, one lifted clear of the stack](doc/img/job_queue.png)
+
 It is a template rather than a library. You copy the files into your project, put your work in one empty method, and own the result. There is no jar to depend on and no interface it makes you implement.
 
 ```
@@ -327,6 +329,7 @@ test/         StateMachineTest (the prover), QueueTests (behaviour + race), Benc
 sql/          mysql, postgres, oracle, mssql
 doc/          Queue_States.txt   the specification the prover reads
               development.txt    internals, invariants, porting, design notes
+              img/               the deck, drawn from the SVG beside it
 legacy/       the 2001 original, GPL v2, kept as an example
 queue.sh      start | run | stop | status
 ```
