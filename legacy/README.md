@@ -26,17 +26,21 @@ interface that still exists rather than reviving this.
 
 ## If you copy this approach, fix these first
 
-The delivery path in `src/org/is/jms/` has been given three fixes, none of
-them tested, since the archive cannot be compiled without the JMS API. They
-are the ones you would otherwise hit on the first run.
+The delivery path in `src/org/is/jms/` has been brought up to modern practice,
+so that nobody copying it inherits code that cannot run. None of it is tested,
+since the archive does not compile without the JMS API.
 
-1. **`Thread.stop()` no longer merely deprecated, it throws.** It was
-   deprecated as unsafe in 1998 and raises `UnsupportedOperationException` on
-   Java 20 and later, so `close()` would have thrown on any current JVM.
-   Replaced by a `volatile boolean` the loop checks, plus an interrupt so the
-   thread does not sit in a sleep or a blocking read. Same in
+Each of these was the right answer in 2001 and is the wrong one now. That is
+the only reason they were touched.
+
+1. **`Thread.stop()` now throws rather than merely being deprecated.** In 2001
+   it was the ordinary way to end a thread, and the alternative, interrupt, was
+   not available on the JDK 1.0 applet runtimes this had to support. Since Java
+   20 it raises `UnsupportedOperationException`, so `close()` would fail on any
+   current JVM. Replaced by a `volatile boolean` the loop checks, plus an
+   interrupt so the thread does not sit in a sleep or a blocking read. Same in
    `util/ThreadUtils` and `net/Impl1Server`, where closing the server socket
-   already unblocked `accept()` and the `stop()` was doing nothing useful.
+   already unblocked `accept()` and the `stop()` was doing nothing anyway.
 
 2. **The consumer loop was `while(true)` with nothing to stop it**, which is
    why `close()` had to reach for `Thread.stop()`. The flag was the cause; the
@@ -49,9 +53,10 @@ are the ones you would otherwise hit on the first run.
    daemon thread. Now caught per message: report it and carry on.
 
 Left alone: `net/Impl2*`, `Impl3Server`, `logmanager` and the examples still
-call `Thread.stop()`, with comments saying interrupt was avoided deliberately
-for JDK 1.0 applet compatibility. That was a real constraint in 2001 and those
-classes are outside the queue path.
+call `Thread.stop()`, and say in their comments that interrupt was avoided on
+purpose for JDK 1.0 applet compatibility. That constraint was real and is worth
+seeing as it was. They sit outside the queue path, so copying them is not the
+point; if you do, apply the same fix as above.
 
 A note on the 40 ms sleep in the delivery loop, since it looks like polling and
 mostly is not: the socket transport blocks inside `getMessage()`, so there the
