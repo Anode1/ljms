@@ -75,6 +75,30 @@ Two limits on what that buys. It checks that the graph is **well formed** — it
 
 ## Why
 
+This is not a messaging idea. It is a compare-and-swap idea and a mainframe idea, and neither is new.
+
+Anyone who has written lock-free code knows the first shape. You do not take a lock: you read a value, then swap in a new one *only if it has not changed since you read it*, and if somebody beat you to it you try again. Contention costs a wasted attempt rather than a blocked thread, so the cost grows with the number of contenders instead of falling off a cliff past some threshold. `UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is precisely that compare-and-swap: the row is the word, the predicate is the comparand, and the affected-row count is the return value — 1 you won, 0 somebody else did. The database performs the atomic part, which is the one thing every database is unambiguously good at.
+
+The second shape is much older. A mainframe job queue keeps the state of the work in the spool rather than in the process doing the work, and everything follows from that: an operator can see it, a failed job is *held* for a person instead of being retried into the ground, and killing the address space loses nothing. It is most of why those systems are hard to kill, and it is exactly the property every in-memory queue, actor mailbox and thread pool gives away — they keep the state of the work inside the thing most likely to die.
+
+Put the two together and there is not much left to build. The queue is a table, the lock is a `WHERE` clause, and the broker is a loop. What usually arrives as infrastructure — a service to install, secure, monitor, back up and upgrade — is a state machine over rows once you stop paying for the parts you were not using.
+
+```
+LOCK-FREE CAS  (any concurrent code)      LJMS  (any database)
+------------------------------------      -----------------------------------
+  old = load(addr)                          task = SELECT ... WHERE status='NEW'
+      |                                         |
+  new = f(old)                              claim it for this worker
+      |                                         |
+  CAS(addr, old, new)                       UPDATE ... WHERE id=? AND status='NEW'
+      |                                         |
+  succeeded? -> it is yours                 1 row  -> it is yours
+  failed?    -> somebody else won,          0 rows -> somebody else won,
+                read again and retry                  read again and retry
+```
+
+## Design
+
 **Nothing is held across your code.** The claim and each outcome are single predicated `UPDATE`s under autocommit:
 
 ```sql
@@ -194,7 +218,7 @@ The first LJMS, in 2001, was a small open-source library implementing the JMS in
 
 The idea has since carried four production systems, and this is the fourth pass at it: the one that moves the queue into a table, where it outlives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five.
 
-The shape is much older. A mainframe job queue — JES on z/OS — works the same way: work sits in an explicit state where an operator can see it, a failed job is *held* for a person rather than retried blindly, and killing the address space loses nothing, because the state of the work is data rather than process memory. That last property is most of why those systems are hard to kill, and it is the one worth copying.
+The shape it borrows from is JES, the job queue on z/OS — see [Why](#why).
 
 ## Related
 

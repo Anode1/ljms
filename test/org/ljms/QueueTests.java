@@ -407,6 +407,49 @@ public class QueueTests extends TestCase {
     }
 
     /**
+     * A single worker must never hold more than one connection at a time, and
+     * none at all while idle or while work() runs.
+     *
+     * This is what lets one worker occupy exactly one slot of max_connections,
+     * and what keeps a connection alive for milliseconds rather than long
+     * enough to be closed under it by wait_timeout. It holds because every
+     * method opens in a try and closes in the finally, and none nests —
+     * take() passes its connection down to head() and cas() rather than
+     * letting them open their own. Easy to break by accident; hence a test.
+     */
+    public void testOneWorkerHoldsOneConnectionAtATime() throws Exception {
+
+        final int[] open = { 0 }, max = { 0 };
+
+        Connections counted = () -> {
+            final Connection real = db.getConnection();
+            open[0]++;
+            if (open[0] > max[0]) max[0] = open[0];
+            return (Connection) java.lang.reflect.Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[] { Connection.class },
+                    (proxy, method, args) -> {
+                        if ("close".equals(method.getName())) { open[0]--; real.close(); return null; }
+                        return method.invoke(real, args);
+                    });
+        };
+
+        QueueDAO counting = new QueueDAO(counted);
+        for (int i = 0; i < 5; i++) counting.put(TYPE, Long.valueOf(i), null);
+
+        Task task;
+        while ((task = counting.take(OWNER, NODE, LEASE)) != null) {
+            assertEquals("nothing may be held while the task runs", 0, open[0]);
+            counting.done(task.id, OWNER);
+        }
+        counting.recoverExpired();
+        counting.requeueErrors(NODE);
+        counting.pending(TYPE);
+
+        assertEquals("a single worker must never hold two connections at once", 1, max[0]);
+        assertEquals("and none once it goes idle", 0, open[0]);
+    }
+
+    /**
      * The whole justification for the design: N workers hammering take()
      * against the same rows, with no lock held anywhere, must still hand out
      * every task exactly once.

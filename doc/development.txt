@@ -231,6 +231,17 @@ CONNECTIONS, AND WHY EXPIRY IS NOT A PROBLEM
 LJMS opens a connection per operation and closes it in a finally. Nothing is
 held between operations, and an idle worker holds no connection at all.
 
+One worker therefore holds at most ONE connection at a time - it occupies one
+slot of max_connections, not two - because no method that holds a connection
+calls one that opens another: take() passes its connection down to head() and
+cas() rather than letting them open their own. Nothing is held while work()
+runs either, so any connection your own code opens is the only one alive at
+that moment. Locked in by testOneWorkerHoldsOneConnectionAtATime; it would be
+easy to break by accident.
+
+It does open about two connections per task in sequence (one for take, one for
+the outcome). That is churn, not concurrency.
+
 That is what makes stale connections a non-issue in the default path: a
 connection lives for milliseconds, against a MySQL wait_timeout of 8 hours by
 default. There is no window in which it can expire under us, so there is no
