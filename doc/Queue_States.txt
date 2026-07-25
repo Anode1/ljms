@@ -19,6 +19,21 @@ carries the same names, QueueDAO.java is the implementation.
 * ERROR (failed)
   Parked for a human. Nothing retries it automatically.
 
+          put()
+            |
+            v
+   .---->  NEW
+   |        |
+   |        |  take()
+   |        v
+   |   IN_PROCESS  --- done() --->  DONE    terminal
+   |     |      \
+   |     |       '-- error() -->   ERROR
+   |     |                           |
+   |     | release                   | restart
+   |     | ^expire                   |
+   '-----+---------------------------'
+
 Diagram (edge list; ^ = happens without anyone asking):
   NEW         --take-->       IN_PROCESS
   IN_PROCESS  --done-->      DONE           [terminal]

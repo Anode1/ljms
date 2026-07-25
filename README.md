@@ -115,6 +115,36 @@ Nothing above is an LJMS API, and none of it can drift from what the workers are
 ## The states
 
 ```
+          put()
+            |
+            v
+   .---->  NEW
+   |        |
+   |        |  take()
+   |        v
+   |   IN_PROCESS  --- done() --->  DONE    terminal
+   |     |      \
+   |     |       '-- error() -->   ERROR
+   |     |                           |
+   |     | release                   | restart
+   |     | ^expire                   |
+   '-----+---------------------------'
+
+   take()     a worker claims it - the optimistic lock. One row updated: it
+              is mine. Zero rows: another worker got there first, read again.
+   done()     finished.
+   error()    failed. Parked for a person; nothing retries it automatically.
+   release    the worker was stopped and handed the task back before exiting.
+   ^expire    the lease ran out - the worker died without handing anything back.
+   restart    someone fixed the cause and restarted that worker, which returns
+              its own ERROR rows to NEW.
+```
+
+Only `take` and `restart` are anyone's decision. `done` and `error` are whatever the work did; `release` and `^expire` are a worker leaving, politely or otherwise.
+
+In character form, which is what the prover reads:
+
+```
 NEW        = start | IN_PROCESS[take]
 IN_PROCESS = DONE[done] | ERROR[error] | NEW[release] | NEW[^expire]
 ERROR      = NEW[restart]
@@ -170,6 +200,27 @@ That is what lets worker count grow: contention costs wasted attempts rather tha
 **No automatic retries.** A failed task goes to `ERROR` and stays there: one failure, one log line, one row. A retry loop multiplies a single problem across the log and hides how many distinct problems there are. Restarting the worker is the retry — startup returns that worker's `ERROR` rows to `NEW`, on the assumption someone restarted it because they fixed the cause. Meanwhile the queue flows past a parked task instead of stalling on it.
 
 **Recovery is by lease, not by owner.** Taking a task sets `lease_until`; a row still `IN_PROCESS` past its lease is returned to `NEW` by whichever worker notices. One timestamp comparison, and it covers three cases owner-matching does not: a dead worker's tasks come back without that host returning under the same name; two workers sharing a node id cannot take each other's in-flight rows; and when the *database* is what failed, a worker cannot write "put me back" anywhere.
+
+```
+   the lease, and the four ways a task's time under a worker ends
+
+   A: take |=== work ===| done                     the usual case;
+           |<--- lease --------->|                 the lease never matters
+
+   B: take |=== work ===| stop                     worker asked to stop:
+           |<--- lease --------->|                 hands the task back at once
+                         ^ back to NEW here        (release)
+
+   C: take |=== work ===X  (worker dies)           nothing hands it back;
+           |<--- lease --------->|                 the lease is what frees it
+                                 ^ back to NEW here (^expire)
+
+   D: take |=== work ================= still going...
+           |<--- lease --------->|
+                                 ^ another worker may take it here.
+                                   This is at-least-once. Call extendLease()
+                                   from long work, and stop if it returns false.
+```
 
 **A deliberate stop does not strand a task.** Shutdown asks the worker to finish what it is doing and waits; if the task is still running when the wait runs out, the worker hands it back before exiting, so another worker can take it at once rather than after the rest of its lease. Only a worker that dies without warning leaves a task to lease expiry.
 
