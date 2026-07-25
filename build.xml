@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!--
+  LJMS build. Two targets you will use:
+
+    ant                                    compile to build/
+    ant prove                              check the state machine (no database)
+    ant test                               the behaviour and race tests
+                                           (set the constants at the top of QueueTests first)
+
+  No Maven, no dependency resolution, no plugins. The only jar involved is
+  junit, vendored in lib/, and it is needed only by the tests. LJMS itself
+  compiles against the JDK and nothing else — put your JDBC driver on the
+  classpath and that is the whole dependency list.
+-->
+<project name="ljms" default="compile" basedir=".">
+
+	<property name="src"   location="src" />
+	<property name="test"  location="test" />
+	<property name="build" location="build" />
+
+	<path id="test.classpath">
+		<pathelement location="${build}" />
+		<!-- junit, and your JDBC driver: drop it in lib/ or put it on CLASSPATH -->
+		<fileset dir="lib" includes="**/*.jar" />
+	</path>
+
+	<target name="compile" description="Compile LJMS (JDK only, no dependencies)">
+		<mkdir dir="${build}" />
+		<javac srcdir="${src}" destdir="${build}" debug="true"
+				source="11" target="11" includeantruntime="false" encoding="UTF-8">
+		</javac>
+	</target>
+
+	<target name="compile-tests" depends="compile">
+		<javac srcdir="${test}" destdir="${build}" debug="true"
+				source="11" target="11" includeantruntime="false" encoding="UTF-8">
+			<classpath refid="test.classpath" />
+		</javac>
+	</target>
+
+	<target name="prove" depends="compile-tests"
+			description="Prove the state machine is well formed (parses doc/Queue_States.txt; no database)">
+		<java classname="junit.textui.TestRunner" failonerror="true" fork="true">
+			<arg value="org.ljms.StateMachineTest" />
+			<classpath refid="test.classpath" />
+		</java>
+	</target>
+
+	<target name="test" depends="prove"
+			description="Behaviour and race tests (set the DB constants in QueueTests; creates and drops its table)">
+		<java classname="junit.textui.TestRunner" failonerror="true" fork="true">
+			<arg value="org.ljms.QueueTests" />
+			<classpath refid="test.classpath" />
+		</java>
+	</target>
+
+	<target name="jar" depends="compile" description="Package build/ as ljms.jar (optional; copying the source is the point)">
+		<jar jarfile="ljms.jar" basedir="${build}" excludes="**/*Test*.class" />
+	</target>
+
+	<target name="clean">
+		<delete dir="${build}" />
+		<delete file="ljms.jar" />
+	</target>
+
+	<target name="help">
+		<echo>ant           compile</echo>
+		<echo>ant prove     check the state machine (no database)</echo>
+		<echo>ant test      behaviour + race tests (edit the DB constants in test/org/ljms/QueueTests.java)</echo>
+		<echo>ant jar       optional packaging</echo>
+	</target>
+
+</project>

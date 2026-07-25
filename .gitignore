@@ -1,0 +1,4 @@
+build/
+logs/
+ljms.jar
+lib/mysql-connector-*.jar

@@ -1,0 +1,124 @@
+Queue states (org.ljms):
+
+One table, N worker processes, no broker. A worker reads the oldest due task
+and claims it by compare-and-swap — "UPDATE ... WHERE queue_id = ? AND status =
+'NEW'" — then runs it and records the outcome. Whichever worker's UPDATE lands
+first owns the row; the others match 0 rows and read the head again. Plain SQL,
+no vendor extensions. This file is the spec: the character form below is
+parsed and checked mechanically (see "Formal correctness checks"), Queue.java
+carries the same names, QueueDAO.java is the implementation.
+
+* NEW (enqueued and waiting)
+  The only state a worker claims. Always claimable once due — there is no
+  "pending but no longer runnable" state, so a queue position count is honest.
+  not_before holds a task back until a chosen time (overnight batches, or a
+  capacity check that said "not yet").
+* IN_PROCESS (claimed, being worked on)
+  The row carries the owner token of the worker holding it and lease_until,
+  the time the claim stops being valid.
+* DONE (finished successfully)
+* ERROR (failed)
+  Parked for a human. Nothing retries it automatically.
+
+Diagram (edge list; ^ = happens without anyone asking):
+  NEW         --take-->       IN_PROCESS
+  IN_PROCESS  --done-->      DONE           [terminal]
+  IN_PROCESS  --error-->     ERROR
+  IN_PROCESS  --^expire-->   NEW            (lease ran out; worker presumed dead)
+  ERROR       --restart-->   NEW            (operator restarts the worker)
+
+Character form (STATE = target[event]):
+  NEW         = start | IN_PROCESS[take]
+  IN_PROCESS  = DONE[done] | ERROR[error] | NEW[^expire]
+  ERROR       = NEW[restart]
+  DONE        = terminal
+
+Formal correctness checks (decidable directly from the character form):
+  - every non-start state has an incoming edge         -> no unreachable state
+  - every non-terminal state has an outgoing edge      -> no dead-end / stuck state
+  - terminal states (DONE) have no outgoing edge       -> proper sink
+  - no (state, event) pair maps to two targets         -> deterministic
+  - at least one path leads from start to a terminal   -> non-empty
+All five hold for the current machine.
+
+What the graph checks cannot see (the liveness argument, by hand):
+  The machine has two cycles, NEW -> IN_PROCESS -> NEW (^expire) and
+  NEW -> IN_PROCESS -> ERROR -> NEW (restart). Neither can spin, because
+  neither edge fires on its own:
+  - ^expire needs a worker to die mid-task. A worker that keeps dying is a
+    worker that is down, not a loop.
+  - restart is an operator action. Nothing in the code triggers it.
+  There is deliberately no automatic retry edge, which is what would make
+  IN_PROCESS -> NEW self-sustaining.
+
+Nothing is ever locked (the rule that keeps this scalable):
+  Every transition is one predicated single-row UPDATE under autocommit. The
+  correctness comes from the predicate, not from holding anything:
+    - no SELECT ... FOR UPDATE
+    - no transaction spanning the read and the update
+    - no transaction spanning the work
+    - no table locks, no advisory locks, no synchronized
+  "UPDATE ... WHERE queue_id = ? AND status = 'NEW'" is a compare-and-swap: the
+  affected-row count is the return value, 1 = won, 0 = lost. The only lock is
+  the one the database takes inside that statement, released at statement end.
+  So contention costs wasted attempts, never blocked waiters — the cost grows
+  linearly with workers instead of collapsing at some threshold. This is what
+  lets you run as many workers as you like.
+
+  The failure mode this avoids is a lock held across application time
+  (SELECT FOR UPDATE, then do the work, then COMMIT). That looks fine in
+  testing, where there is no contention, and convoys under real load: workers
+  queue behind the leader, the connection pool drains, timeouts cascade.
+
+  Note the SELECT that finds the head is a snapshot read: under REPEATABLE READ
+  it can return a row another worker has already claimed and committed. That is
+  harmless ONLY because the UPDATE re-checks status with a current read. Do not
+  drop "AND status = ?" from the claim on the grounds that we just selected the
+  row — that removes the CAS, and it fails silently, and only under load.
+
+Why no automatic retries:
+  One failure, one log line, one row to look at. A retry loop multiplies a
+  single problem across the log and hides how many distinct problems there
+  actually are. The fix is a human fix — to the code or to the data — and
+  restarting the worker is the retry: startup moves this worker's ERROR rows
+  back to NEW (QueueDAO.requeueErrors, scoped by owner_node so restarting one
+  worker does not replay another's failures).
+
+  ERROR being terminal is also what keeps a bad task from stalling the queue:
+  the worker records it and moves on to the next task rather than stopping.
+
+Why recovery is by lease and not by owner:
+  A claim sets lease_until; a row still IN_PROCESS past its lease is presumed
+  abandoned and returned to NEW by whichever worker notices (^expire). One
+  timestamp comparison, and it covers three cases that owner-matching cannot:
+  - a dead worker's tasks come back without waiting for that worker to
+    restart; owner-keyed recovery strands them if the host never returns under
+    the same name;
+  - two workers sharing a node id cannot steal each other's in-flight rows, so
+    the node id is a diagnostics label, not a correctness requirement;
+  - when the database is what failed, a worker cannot write "put me back"
+    anywhere — the lease expires on its own.
+
+Delivery is at-least-once:
+  A worker that is slow rather than dead can lose its lease and have the task
+  run twice. Tasks must be idempotent, or fence themselves with
+  QueueDAO.extendLease(), which returns 0 once the lease is gone. queue.lease_seconds
+  must exceed the longest task, or that task must call touch() as it goes.
+
+States are names, not codes:
+  Every status column in this schema is a readable VARCHAR, and one symbol runs
+  the whole way through: the token in this file, the constant in Queue.java,
+  the literal in the SQL, and the value in the table are all "IN_PROCESS".
+  Codes would add two mappings that can drift, and would need a translation
+  layer before the checks above could compare code against this doc. The
+  ancestor of this queue used numeric codes and its recovery swept a
+  hand-written list — ('90','02','81','82','86','19') — that silently stopped
+  covering every in-flight state once new ones were added.
+
+For future, not now:
+* Capacity gate (#351): publishing is admission-controlled by concurrent
+  participants. Fits without a new state — the worker checks headroom and, if
+  there is none, leaves the task NEW with not_before pushed out. No busy loop,
+  no extra state, and "2 of 10" stays truthful.
+* Priority: a priority column plus one more ORDER BY term, if FIFO ever stops
+  being enough. Not added on speculation.
