@@ -18,11 +18,8 @@ package org.ljms;
  *
  * Names, not codes. A status column you can read without the source is worth
  * the handful of extra bytes: "SELECT status, COUNT(*) ... GROUP BY status"
- * should answer the question by itself. The ancestor of this queue used
- * numeric codes, and its recovery swept a hand-written list —
- * ('90','02','81','82','86','19') — that silently stopped covering every
- * in-flight state once new ones were added. Nobody reviewing that line could
- * see what was missing.
+ * should answer the question by itself. Codes need a mapping in each
+ * direction, and a query that lists a set of them cannot be checked by eye.
  */
 public class Queue {
 

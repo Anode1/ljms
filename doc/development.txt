@@ -187,11 +187,9 @@ extendLease().
 
 States are names, not codes. The same symbol in the spec, the constant, the SQL
 literal and the table, so "SELECT status, COUNT(*) GROUP BY status" answers the
-question without the source. Codes need two mappings that can drift. The direct
-ancestor of this queue used numeric codes and its recovery swept a hand-written
-list — ('90','02','81','82','86','19') — that silently stopped covering every
-in-flight state once new ones were added. Nobody reviewing that line could see
-what was missing.
+question without the source. Codes need two mappings that can drift, and a
+query listing a set of them cannot be checked by eye - which matters most in
+the recovery sweeps, where the set of in-flight states is the whole point.
 
 One task at a time per worker. Keeps the machine four states rather than a
 concurrency model. For more parallelism, start more workers: they coordinate

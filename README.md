@@ -97,7 +97,7 @@ That is what lets worker count grow: contention costs wasted attempts rather tha
 
 **Delivery is at-least-once.** A worker that is slow rather than dead can lose its lease and have its task run twice. Make tasks idempotent, or fence them with `extendLease()`, which returns false once the lease is gone. No queue with a network in it can offer exactly-once.
 
-**States are names, not codes.** `NEW`, `IN_PROCESS`, `DONE`, `ERROR` — the same token in the spec, the constant, the SQL and the table, so `SELECT status, COUNT(*) ... GROUP BY status` answers the question without the source. This design descends from one that used numeric codes, whose recovery swept a hand-written list — `('90','02','81','82','86','19')` — that quietly stopped covering every in-flight state once new ones were added. Nobody reviewing that line could see what was missing.
+**States are names, not codes.** `NEW`, `IN_PROCESS`, `DONE`, `ERROR` — the same token in the spec, the constant, the SQL and the table, so `SELECT status, COUNT(*) ... GROUP BY status` answers the question without the source. Numeric codes need a mapping in each direction, and a query that lists them cannot be checked by eye.
 
 ## Performance
 

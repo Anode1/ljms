@@ -136,14 +136,12 @@ Delivery is at-least-once:
   must exceed the longest task, or the task must extend it as it goes.
 
 States are names, not codes:
-  Every status column in this schema is a readable VARCHAR, and one symbol runs
-  the whole way through: the token in this file, the constant in Queue.java,
-  the literal in the SQL, and the value in the table are all "IN_PROCESS".
-  Codes would add two mappings that can drift, and would need a translation
-  layer before the checks above could compare code against this doc. The
-  ancestor of this queue used numeric codes and its recovery swept a
-  hand-written list — ('90','02','81','82','86','19') — that silently stopped
-  covering every in-flight state once new ones were added.
+  One symbol runs the whole way through: the token in this file, the constant
+  in Queue.java, the literal in the SQL, and the value in the table are all
+  "IN_PROCESS". Codes would add two mappings that can drift, and would need a
+  translation layer before the checks above could compare code against this
+  doc. A query listing a set of codes also cannot be checked by eye, which
+  matters most in the recovery sweeps, where the set is the whole point.
 
 For future, not now:
 * Admission control ("run no more than N at once"). Fits without a new state:
