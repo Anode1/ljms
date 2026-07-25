@@ -75,16 +75,18 @@ Two limits on what that buys. It checks that the graph is **well formed** — it
 
 ## Why
 
-This is not a messaging idea. It is a compare-and-swap idea and a mainframe idea, and neither is new.
+This is not a messaging idea, and it is not new. It already has a name in two different fields.
 
-Anyone who has written lock-free code knows the first shape. You do not take a lock: you read a value, then swap in a new one *only if it has not changed since you read it*, and if somebody beat you to it you try again. Contention costs a wasted attempt rather than a blocked thread, so the cost grows with the number of contenders instead of falling off a cliff past some threshold. `UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is precisely that compare-and-swap: the row is the word, the predicate is the comparand, and the affected-row count is the return value — 1 you won, 0 somebody else did. The database performs the atomic part, which is the one thing every database is unambiguously good at.
+Database people call it **optimistic locking**: instead of locking a row while you decide what to do with it, you read it, and when you write you make the write conditional on it not having changed. If it did change, your update matches nothing and you start over. Concurrent-programming people call the same idea **compare-and-swap**: read a value, compute a new one, and swap it in only if the old one is still there.
 
-The second shape is much older. A mainframe job queue keeps the state of the work in the spool rather than in the process doing the work, and everything follows from that: an operator can see it, a failed job is *held* for a person instead of being retried into the ground, and killing the address space loses nothing. It is most of why those systems are hard to kill, and it is exactly the property every in-memory queue, actor mailbox and thread pool gives away — they keep the state of the work inside the thing most likely to die.
+`UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is both descriptions of one statement. The row is the word, `AND status='NEW'` is the comparand, and the affected-row count is the return value — 1 you won, 0 somebody else did. Contention costs a wasted attempt rather than a blocked worker, so the cost grows with the number of contenders instead of falling off a cliff past some threshold. The database performs the atomic part, which is the one thing every database is unambiguously good at.
+
+The other half is much older. A mainframe job queue keeps the state of the work in the spool rather than in the process doing the work, and everything follows from that: an operator can see it, a failed job is *held* for a person instead of being retried into the ground, and killing the address space loses nothing. It is most of why those systems are hard to kill, and it is exactly the property every in-memory queue, actor mailbox and thread pool gives away — they keep the state of the work inside the thing most likely to die.
 
 Put the two together and there is not much left to build. The queue is a table, the lock is a `WHERE` clause, and the broker is a loop. What usually arrives as infrastructure — a service to install, secure, monitor, back up and upgrade — is a state machine over rows once you stop paying for the parts you were not using.
 
 ```
-LOCK-FREE CAS  (any concurrent code)      LJMS  (any database)
+COMPARE-AND-SWAP  (concurrent code)       OPTIMISTIC LOCKING  (any database)
 ------------------------------------      -----------------------------------
   old = load(addr)                          task = SELECT ... WHERE status='NEW'
       |                                         |
