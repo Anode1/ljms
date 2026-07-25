@@ -225,6 +225,49 @@ that worker's ERROR rows have no automatic path back, and "restart is the
 retry" never fires for them. Use a stable node id, or requeueAllErrors().
 
 
+CONNECTIONS, AND WHY EXPIRY IS NOT A PROBLEM
+--------------------------------------------
+
+LJMS opens a connection per operation and closes it in a finally. Nothing is
+held between operations, and an idle worker holds no connection at all.
+
+That is what makes stale connections a non-issue in the default path: a
+connection lives for milliseconds, against a MySQL wait_timeout of 8 hours by
+default. There is no window in which it can expire under us, so there is no
+reconnect logic here, no validation query, and no isValid() check - and none
+is needed.
+
+The same property makes a database restart survivable without any special
+handling: the next operation opens a fresh connection, so the loop's ordinary
+backoff carries the worker across an outage. It is also why a worker can be
+kill -9'd at any instant.
+
+The cost is real and measurable - a DriverManager connect is ~11 ms, so
+per-operation is roughly a third of pooled throughput single-worker. For the
+workloads this is built for, where a task runs for seconds or minutes, that is
+noise.
+
+If you hand LJMS a pooled Connections, staleness becomes the pool's problem,
+and every serious pool validates on borrow (HikariCP uses JDBC4 isValid();
+DBCP uses testOnBorrow with a validationQuery). Two notes:
+
+  - Do NOT set autoReconnect=true in a MySQL URL. It silently reconnects
+    mid-session and discards session state and any open transaction. LJMS is
+    unusually safe against it - no session state, no transaction spanning
+    statements - but it solves a problem per-operation connections do not have.
+
+  - MySQL Connector/J does not ship a usable pool. MysqlConnectionPoolDataSource
+    and MysqlPooledConnection implement the JDBC ConnectionPoolDataSource SPI,
+    which is what an application server pools *with*; they pool nothing
+    themselves. This differs from Oracle, whose driver used to include the
+    Implicit Connection Cache (deprecated in 12c, succeeded by UCP - free, but
+    a separate jar).
+
+  - A pool holds its minimum-idle connections whether or not the queue has
+    work. Against a default max_connections of 151, a mostly-idle queue is
+    better off per-operation.
+
+
 KNOWN GAPS
 ----------
 
