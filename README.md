@@ -290,7 +290,7 @@ db-scheduler is the closest thing to this and a reasonable alternative: also a t
 Those queues die with the JVM. This one survives a restart, a crash and a machine, because it is a table.
 
 **Is polling not wasteful?**
-Somewhat, and that is the trade. A broker lets you block in the kernel until a message arrives; MySQL has no equivalent. PostgreSQL does have `LISTEN`/`NOTIFY` and Oracle has AQ — LJMS uses neither, because each would be another vendor-specific path and a listener to keep alive. What you pay is one indexed `SELECT` per worker per interval. What you get is no listener, no reconnect logic, no message lost on a dropped connection, and a worker you can `kill -9` without losing the task — it is re-run once its lease expires.
+Somewhat, and that is the trade. A broker lets you block in the kernel until a message arrives, and so does a file — [`iac`](https://github.com/Anode1/iac) is the same author's message queue and does exactly that, parked on an `inotify` watch at zero CPU until a peer appends. A database table gives you no such handle, so a worker has to ask. PostgreSQL does have `LISTEN`/`NOTIFY` and Oracle has AQ — LJMS uses neither, because each would be another vendor-specific path and a listener to keep alive. What you pay is one indexed `SELECT` per worker per interval. What you get is no listener, no reconnect logic, no message lost on a dropped connection, and a worker you can `kill -9` without losing the task — it is re-run once its lease expires.
 
 **Only one task at a time per worker?**
 Yes, deliberately: it keeps the machine four states rather than a concurrency model. For more parallelism, start more workers.
@@ -329,7 +329,11 @@ The shape it borrows from is JES, the job queue on z/OS — see [Why](#why).
 
 ## Related
 
-[ais](https://github.com/Anode1/ais) — an associative index in plain text. [agent-recipes](https://github.com/Anode1/agent-recipes) — practices for working with coding agents.
+[**iac**](https://github.com/Anode1/iac) — the closest relative: also a queue, of messages between agents on one machine, and also dependency-free plain files with no daemon. It is the interesting contrast, because it can do the thing LJMS cannot. A message board is a file, so a reader can block on `inotify` and be woken by the kernel the moment something lands — zero CPU while it waits. A table is not a file you can watch, so LJMS has to ask. Same instinct, opposite constraint.
+
+[**ais**](https://github.com/Anode1/ais) — an associative index in plain text. Not a queue; related by disposition rather than mechanism — keep the store readable, own the format, add no engine you have to trust.
+
+[**agent-recipes**](https://github.com/Anode1/agent-recipes) — practices for working with coding agents.
 
 ## Licence
 
