@@ -273,7 +273,7 @@ The second column is not a real pool, one connection per thread, never returned,
 **Good fit**
 
 - Anything already backed by a relational database, where a broker would be the only new infrastructure.
-- Work measured in seconds to hours, at tens to thousands of tasks a day: report generation, imports, model runs, batch jobs, mail.
+- Work measured in seconds to hours, at tens to thousands of tasks a day: report generation, imports, model runs, batch jobs, index rebuilds.
 - Sequencing and delayed execution, "one at a time", "start this at 2 a.m.", which `not_before` handles without a scheduler.
 - Teams with nobody to operate a broker, and anyone who needs to answer "what is the queue doing?" with a `SELECT`.
 - Audited work, where every state change being a visible row with a timestamp matters more than throughput.
