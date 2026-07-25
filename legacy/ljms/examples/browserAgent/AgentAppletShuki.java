@@ -43,7 +43,7 @@ public class AgentApplet extends Applet implements HttpRequestListener{
   }
 
   public void stop(){
-     requestor.stop();
+     requestor.interrupt();
   }
 
   public void dataReady(byte[] data){

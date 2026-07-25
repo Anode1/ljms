@@ -52,7 +52,7 @@ public class ProgressDialog extends JWindow{
   public synchronized void stop(){
 
     if(worker!=null){
-      worker.stop();
+      worker.interrupt();
     }
     worker=null;
   }
@@ -73,7 +73,7 @@ public class ProgressDialog extends JWindow{
 
     disposed=true;
     if(worker!=null){
-       worker.stop();
+       worker.interrupt();
        worker=null;
     }
     super.dispose();

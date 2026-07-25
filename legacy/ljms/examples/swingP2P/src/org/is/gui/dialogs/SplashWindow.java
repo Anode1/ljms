@@ -98,7 +98,7 @@ public class SplashWindow extends JWindow{// extends JFrame/* implements Runnabl
 
     disposed=true;
     if(worker!=null){
-       worker.stop();
+       worker.interrupt();
        worker=null;
     }
     super.dispose();

@@ -104,7 +104,7 @@ class Impl2Worker implements Runnable, Cloneable{
       return;
     }
     onShutdown();
-    thread.stop();    //we are not using interrupt to be compatible with java1.0 in applets
+    thread.interrupt();
     thread=null;
   }
 

@@ -246,7 +246,7 @@ public class Impl3Server implements IServer, IServlet, Runnable, Cloneable{
     if(mainThread!=null){
       synchronized(mainThread){
         if(mainThread!=null){
-          mainThread.stop();
+          mainThread.interrupt();
           mainThread=null;
         }
       }

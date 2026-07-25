@@ -1,4 +1,5 @@
-/** * @(#)LogManager.java
+/**
+ * @(#)LogManager.java
  * Copyright (C) 2001 Vasili Gavrilov
  *
  * This program is free software; you can redistribute it and/or
@@ -14,9 +15,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- */package org.is.logmanager;
+ */
+package org.is.logmanager;
 
-import java.io.ByteArrayOutputStream;import java.io.PrintWriter;import java.io.PrintStream;import java.io.FileOutputStream;/** * Log manager supporting 3 types of logs (3 chanels). Singleton class.<p>
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
+import java.io.PrintStream;
+import java.io.FileOutputStream;
+
+/**
+ * Log manager supporting 3 types of logs (3 chanels). Singleton class.<p>
  * Creates LogManagerWriterThread if not disabled sending messages to it not
  * wasting time waiting (has MessageQueue inside and runs with lower priority.
  * Default behaviour is distributed logging (sending of LogMessages to another
@@ -396,17 +404,32 @@ public class LogManager extends LogManagerBase{
        return true;
     }
 
-   /**    * Lazy initialization static convenience analog of debugLevel    */   public static boolean dLevel(int level){
+   /**
+    * Lazy initialization static convenience analog of debugLevel
+    */
+   public static boolean dLevel(int level){
       if(instance==null){
           createInstance();
       }
 
       return instance.debugLevel(level);
    }
-   /**    * Just for sure - never hurts    */    public void finalize(){      stopDaemon();    }    /**     * Stops worker thread     */    public synchronized void stopDaemon(){
+
+   /**
+    * Just for sure - never hurts
+    */
+    public void finalize(){
+
+      stopDaemon();
+    }
+
+    /**
+     * Stops worker thread
+     */
+    public synchronized void stopDaemon(){
     
       if(worker!=null){
-        worker.stop();
+        worker.interrupt();
         worker=null;
       }
     }

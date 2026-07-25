@@ -1,4 +1,5 @@
-/** * @(#)Worker.java
+/**
+ * @(#)Worker.java
  * Copyright (C) 2001 Vasili Gavrilov
  *
  * This program is free software; you can redistribute it and/or
@@ -14,8 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
- */package org.is.logmanager;
-import java.io.IOException;import java.util.Properties;
+ */
+package org.is.logmanager;
+import java.io.IOException;
+import java.util.Properties;
 import java.util.Enumeration;
 import java.util.Vector;
 
@@ -101,7 +104,7 @@ public class Worker implements Runnable{
      doCleanUp();
 
      if(worker!=null){
-        worker.stop();
+        worker.interrupt();
      }
      worker = null;
   }

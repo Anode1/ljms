@@ -105,7 +105,7 @@ public class MessageUDPSocket implements org.is.jms.MessagePortal, Runnable{
     public void stop(){
 
        if(receiver!=null){
-          receiver.stop();
+          receiver.interrupt();
           receiver=null;
        }
     }

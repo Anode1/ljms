@@ -80,8 +80,8 @@ class Impl1Server implements IServer, Runnable{
      }
 
      serverSocket=null;
-     //was worker.stop(): closing the socket above already unblocks accept(),
-     //and stop() throws UnsupportedOperationException on modern JVMs
+     //closing the socket above already unblocks accept(); the interrupt is
+     //belt and braces. This was Thread.stop(), which throws on modern JVMs.
      if(worker!=null)worker.interrupt();
   }
 

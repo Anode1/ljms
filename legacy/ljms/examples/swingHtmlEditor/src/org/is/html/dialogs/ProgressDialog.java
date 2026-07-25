@@ -62,7 +62,7 @@ public class ProgressDialog extends JWindow{// extends JFrame/* implements Runna
   public synchronized void stop(){
 
     if(worker!=null){
-      worker.stop();
+      worker.interrupt();
     }
     worker=null;
   }
@@ -100,7 +100,7 @@ public class ProgressDialog extends JWindow{// extends JFrame/* implements Runna
 
     disposed=true;
     if(worker!=null){
-       worker.stop();
+       worker.interrupt();
        worker=null;
     }
     super.dispose();

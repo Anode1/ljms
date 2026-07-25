@@ -34,13 +34,19 @@ Each of these was the right answer in 2001 and is the wrong one now. That is
 the only reason they were touched.
 
 1. **`Thread.stop()` now throws rather than merely being deprecated.** In 2001
-   it was the ordinary way to end a thread, and the alternative, interrupt, was
-   not available on the JDK 1.0 applet runtimes this had to support. Since Java
-   20 it raises `UnsupportedOperationException`, so `close()` would fail on any
-   current JVM. Replaced by a `volatile boolean` the loop checks, plus an
-   interrupt so the thread does not sit in a sleep or a blocking read. Same in
-   `util/ThreadUtils` and `net/Impl1Server`, where closing the server socket
-   already unblocked `accept()` and the `stop()` was doing nothing anyway.
+   it was the ordinary way to end a thread, and several call sites say in their
+   comments that interrupt was avoided on purpose, for JDK 1.0 applet
+   runtimes. Since Java 20 it raises `UnsupportedOperationException`, so those
+   paths would fail outright on any current JVM.
+
+   Every one of them is now an interrupt, throughout the library and the
+   examples, and in the delivery loop a `volatile boolean` the loop checks as
+   well, so the thread stops at a defined point rather than wherever it
+   happened to be. In `net/Impl1Server` the call was doing nothing anyway,
+   since closing the server socket already unblocks `accept()`.
+
+   Nobody needs applet compatibility now, and leaving code that cannot run in
+   order to preserve the reason it was written that way helps no one.
 
 2. **The consumer loop was `while(true)` with nothing to stop it**, which is
    why `close()` had to reach for `Thread.stop()`. The flag was the cause; the
@@ -52,11 +58,8 @@ the only reason they were touched.
    `RuntimeException` from a listener was not caught at all, silently, on a
    daemon thread. Now caught per message: report it and carry on.
 
-Left alone: `net/Impl2*`, `Impl3Server`, `logmanager` and the examples still
-call `Thread.stop()`, and say in their comments that interrupt was avoided on
-purpose for JDK 1.0 applet compatibility. That constraint was real and is worth
-seeing as it was. They sit outside the queue path, so copying them is not the
-point; if you do, apply the same fix as above.
+`Thread.suspend()` and `resume()`, which throw for the same reason, do not
+appear anywhere here.
 
 A note on the 40 ms sleep in the delivery loop, since it looks like polling and
 mostly is not: the socket transport blocks inside `getMessage()`, so there the

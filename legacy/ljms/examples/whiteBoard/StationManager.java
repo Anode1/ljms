@@ -235,7 +235,7 @@ public class StationManager extends Applet implements Runnable{
        catch(Exception e){}
 
 
-       if(kicker!=null) kicker.stop();
+       if(kicker!=null) kicker.interrupt();
        kicker = null;
   }
 
@@ -294,7 +294,7 @@ public class StationManager extends Applet implements Runnable{
 
 
           if(kicker!=null){
-              kicker.stop();
+              kicker.interrupt();
               kicker = null;
           }
 

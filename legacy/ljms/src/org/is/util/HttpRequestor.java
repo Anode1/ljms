@@ -95,7 +95,7 @@ public class HttpRequestor implements Runnable{
 
     if(thread!=null){
       //thread.interrupt();
-      thread.stop();    //we have to support old browsers jdk1.0
+      thread.interrupt();
       thread = null;
     }
   }

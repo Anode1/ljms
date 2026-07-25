@@ -141,7 +141,7 @@ class Impl2Server implements IServer, IServlet, Runnable{
       log.printError("Impl2Server::stop: thread in null - can not be stopped");
       return;
     }
-    refToThread.stop();    //we are not using interrupt to be compatible with java1.0 in applets
+    refToThread.interrupt();
     refToThread=null;
   }
 
@@ -196,7 +196,7 @@ class Impl2Server implements IServer, IServlet, Runnable{
      if(refToThread!=null){
         synchronized(refToThread){
             if(refToThread!=null){
-              refToThread.stop();
+              refToThread.interrupt();
               refToThread=null; //release immediately
             }
         }
@@ -227,7 +227,7 @@ class Impl2Server implements IServer, IServlet, Runnable{
   public final void stopService(){
 
     if(worker!=null){
-      try{worker.stop();}catch(Exception e){}
+      try{worker.interrupt();}catch(Exception e){}
     }
     worker=null;
 
