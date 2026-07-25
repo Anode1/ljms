@@ -7,6 +7,7 @@ CREATE TABLE QUEUE (
   ref_id      NUMBER(19),                       -- a row id in your own tables
   payload     CLOB,                             -- anything else the task needs
   status      VARCHAR2(16)   DEFAULT 'NEW' NOT NULL,
+  attempts    NUMBER(10)     DEFAULT 0 NOT NULL,  -- times claimed; diagnostics
   not_before  TIMESTAMP,                        -- run no earlier than
   owner       VARCHAR2(128),                    -- node + JVM incarnation
   owner_node  VARCHAR2(64),                     -- node alone

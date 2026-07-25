@@ -108,7 +108,22 @@ SELECT id, task_type, owner, started FROM QUEUE
 
 SELECT id, task_type, error, finished FROM QUEUE
  WHERE status = 'ERROR' ORDER BY finished DESC;     -- what needs a human
+
+SELECT id, task_type, attempts, error FROM QUEUE
+ WHERE attempts > 1;                                -- picked up more than once,
+                                                    -- so something keeps dying
 ```
+
+Each way a task can leave a worker leaves its own note behind, so a row says what happened to it without anyone reading a log:
+
+| `error` | means |
+| --- | --- |
+| `NULL` | finished cleanly |
+| `<Exception>: <message>` | the task failed and is parked |
+| `released - worker shut down before finishing` | a deliberate stop handed it back |
+| `lease expired - worker presumed dead` | the worker died and the lease freed it |
+
+`attempts` counts claims and nothing else. There is no ceiling and no retry; it is there so a task quietly cycling because whatever picks it up keeps dying is visible as a number, rather than looking identical on the fiftieth pass and the first.
 
 Nothing above is an LJMS API, and none of it can drift from what the workers are actually doing. These are the same rows they update.
 

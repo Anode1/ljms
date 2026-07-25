@@ -13,6 +13,7 @@ CREATE TABLE QUEUE (
   ref_id      BIGINT           NULL,            -- a row id in your own tables
   payload     TEXT             NULL,            -- anything else the task needs
   status      VARCHAR(16)  NOT NULL DEFAULT 'NEW',
+  attempts    INT          NOT NULL DEFAULT 0,   -- times claimed; diagnostics
   not_before  DATETIME         NULL,            -- run no earlier than
   owner       VARCHAR(128)     NULL,            -- node + JVM incarnation
   owner_node  VARCHAR(64)      NULL,            -- node alone

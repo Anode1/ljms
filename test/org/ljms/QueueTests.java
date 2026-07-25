@@ -59,6 +59,7 @@ public class QueueTests extends TestCase {
             "  ref_id      BIGINT           NULL,"                         +
             "  payload     TEXT             NULL,"                         +
             "  status      VARCHAR(16)  NOT NULL DEFAULT 'NEW',"           +
+            "  attempts    INT          NOT NULL DEFAULT 0,"                +
             "  not_before  DATETIME         NULL,"                         +
             "  owner       VARCHAR(128)     NULL,"                         +
             "  owner_node  VARCHAR(64)      NULL,"                         +
@@ -266,6 +267,29 @@ public class QueueTests extends TestCase {
 
         assertEquals(0, queue.abandon(id, "impostor 2026-01-01 00:00:00.000"));
         assertEquals(Queue.IN_PROCESS, col(id, "status"));
+    }
+
+    /**
+     * attempts is how you tell a task that has been picked up once from one
+     * that keeps outliving whatever picks it up. Nothing retries and nothing
+     * caps it; it exists so a task cycling NEW -> IN_PROCESS -> NEW, because
+     * its holders keep dying, does not look identical on the fiftieth pass and
+     * the first.
+     */
+    public void testAttemptsCountsClaims() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+
+        Task task = queue.take(OWNER, NODE, LEASE);
+        assertEquals("claimed once", 1, task.attempts);
+
+        sql("UPDATE QUEUE SET lease_until = '2000-01-01 00:00:00' WHERE id = " + id);
+        queue.recoverExpired();
+
+        task = queue.take(OWNER, NODE, LEASE);
+        assertEquals("the holder died and it was picked up again", 2, task.attempts);
+        assertEquals("and the row says why it came back",
+                     "lease expired - worker presumed dead", col(id, "error"));
     }
 
     /**

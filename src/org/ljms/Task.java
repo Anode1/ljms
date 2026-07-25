@@ -24,8 +24,15 @@ public class Task {
     /** Always {@link Queue#IN_PROCESS} by the time you see it. */
     public String status;
 
+    /**
+     * How many times this task has been claimed, including now. Above 1 means
+     * a previous holder died or was stopped before finishing. Diagnostics
+     * only: nothing retries, and nothing caps it.
+     */
+    public int attempts;
+
 
     public String toString() {
-        return "Task[id=" + id + " type=" + type + " refId=" + refId + " status=" + status + "]";
+        return "Task[id=" + id + " type=" + type + " refId=" + refId + " status=" + status + " attempts=" + attempts + "]";
     }
 }

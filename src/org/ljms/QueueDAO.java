@@ -54,6 +54,13 @@ import java.util.regex.Pattern;
  *       anywhere, the lease expires on its own.</li>
  * </ul>
  *
+ * <b>attempts counts claims, and nothing else.</b> There is no ceiling and no
+ * retry: it exists so that a task quietly cycling NEW -&gt; IN_PROCESS -&gt; NEW,
+ * because whatever picks it up keeps dying, is visible as a number rather than
+ * looking identical on the fiftieth pass and the first.
+ *
+ *   SELECT id, task_type, attempts, error FROM QUEUE WHERE attempts &gt; 1;
+ *
  * <b>At-least-once.</b> A worker that is slow rather than dead can lose its
  * lease and have its task run twice. Tasks must be idempotent, or fence
  * themselves with {@link #extendLease}, which returns 0 once the lease is gone.
@@ -73,7 +80,7 @@ public class QueueDAO {
     /** How many times a take re-reads the head after losing a race. */
     private static final int TAKE_ATTEMPTS = 5;
 
-    private static final String COLS = "id, task_type, ref_id, payload, status";
+    private static final String COLS = "id, task_type, ref_id, payload, status, attempts";
 
     private final Connections db;
     private final String table;
@@ -180,7 +187,11 @@ public class QueueDAO {
                 if (task == null) return null;                   // nothing due
 
                 if (cas(con, task.id, owner, ownerNode, leaseSeconds) > 0) {
+                    // head() read the row as it was before the claim, so bring
+                    // the two fields the claim changed up to date rather than
+                    // spending a round trip re-reading it.
                     task.status = Queue.IN_PROCESS;
+                    task.attempts++;
                     return task;
                 }
                 // Somebody else took it between our read and our update.
@@ -227,6 +238,7 @@ public class QueueDAO {
             String q =
                     "UPDATE " + table +
                     "   SET status = ?, owner = ?, owner_node = ?, " +
+                    "       attempts = attempts + 1, " +
                     "       started = CURRENT_TIMESTAMP, finished = NULL, " +
                     "       lease_until = " + dialect.nowPlusSeconds() + " " +
                     " WHERE id = ? AND status = ?";
@@ -606,6 +618,7 @@ public class QueueDAO {
         t.refId  = rs.getLong("ref_id");     // 0 when NULL; refId is yours to interpret
         t.payload= rs.getString("payload");
         t.status = rs.getString("status");
+        t.attempts = rs.getInt("attempts");
         return t;
     }
 
