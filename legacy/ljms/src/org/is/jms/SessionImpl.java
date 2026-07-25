@@ -37,7 +37,8 @@ public abstract class SessionImpl implements javax.jms.Session, Runnable{
   public String sessionID;
   private MessageListener listener;
   //private ExceptionListener errorHandler;
-  private Thread worker;  
+  private Thread worker;
+  private volatile boolean stopped; //checked by run(); replaces Thread.stop()
 
   public SessionImpl(){
   }
@@ -134,6 +135,7 @@ public abstract class SessionImpl implements javax.jms.Session, Runnable{
   public synchronized void start(){
 
     if(worker==null){
+       stopped=false;
        worker=new Thread(this);
        worker.setDaemon(true);       
        worker.start();
@@ -143,7 +145,10 @@ public abstract class SessionImpl implements javax.jms.Session, Runnable{
   public synchronized void close() throws JMSException{
 
     if(worker!=null){
-       worker.stop();
+       //Thread.stop() was unsafe when this was written and throws
+       //UnsupportedOperationException on modern JVMs.
+       stopped=true;
+       worker.interrupt();
     }
     worker=null;
   }

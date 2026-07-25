@@ -39,6 +39,7 @@ public class LSessionRunnableImpl extends LSessionImpl implements Runnable{
   private MessageListener listener;
   private ExceptionListener eListener;
   private Thread worker;
+  private volatile boolean stopped; //checked by run(); replaces Thread.stop()
   private long timeout=40; //time to wait between Message deliveries (to be a good citizen)
 
   /**
@@ -101,6 +102,7 @@ public class LSessionRunnableImpl extends LSessionImpl implements Runnable{
   public synchronized void start(){
 
     if(worker==null){
+       stopped=false;
        worker=new Thread(this);
        worker.setDaemon(true);
        worker.start();
@@ -114,7 +116,11 @@ public class LSessionRunnableImpl extends LSessionImpl implements Runnable{
   public synchronized void close() throws JMSException{
 
     if(worker!=null){
-       worker.stop();
+       //Thread.stop() was unsafe when this was written and throws
+       //UnsupportedOperationException on modern JVMs. Ask the loop to finish
+       //instead, and interrupt it so it does not sit in sleep or a blocking read.
+       stopped=true;
+       worker.interrupt();
        worker=null;
     }
 
@@ -147,27 +153,40 @@ public class LSessionRunnableImpl extends LSessionImpl implements Runnable{
         return;
      }
 
-     try{
-        while(true){
+     while(!stopped){
 
+        try{
           Message msg=getMessage();
-          listener.onMessage(msg);
-
-          try{Thread.sleep(timeout);}catch(InterruptedException e){}
+          if(msg!=null)listener.onMessage(msg);
         }
-      }
-      catch(JMSException e){
+        catch(JMSException e){
+          report(e);
+          //a delivery failure is not a reason to end delivery for good;
+          //the loop carries on unless close() has asked it to stop
+        }
+        catch(RuntimeException e){
+          //a listener that throws must not silently kill this daemon thread
+          report(new JMSException("MessageListener threw "+e));
+        }
 
-         if(eListener!=null){
-            eListener.onException(e);
-         }
-         else{
-            //no Exception listeners - print at least to the console
-            System.err.println(e);
-         }
+        try{Thread.sleep(timeout);}catch(InterruptedException e){Thread.currentThread().interrupt();return;}
+     }
 
-      }
+  }
 
+  /**
+   * Hands an exception to the registered ExceptionListener, or to the console
+   * if there is none.
+   */
+  private void report(JMSException e){
+
+     if(eListener!=null){
+        eListener.onException(e);
+     }
+     else{
+        //no Exception listeners - print at least to the console
+        System.err.println(e);
+     }
   }
 
 }

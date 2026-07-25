@@ -80,8 +80,9 @@ public class ThreadUtils{
        if(!t.isDaemon()){
           try{
             t.checkAccess();
-           // t.interrupt();
-            t.stop();
+            //was t.stop(): unsafe when written, and it throws
+            //UnsupportedOperationException on modern JVMs
+            t.interrupt();
             try{t.join(3000);}catch(InterruptedException ie){}
             System.out.println("Thread: " + t.getName()+" is not daemon - was destroyed");
           }catch (SecurityException e) {

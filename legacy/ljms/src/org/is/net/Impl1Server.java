@@ -80,7 +80,9 @@ class Impl1Server implements IServer, Runnable{
      }
 
      serverSocket=null;
-     worker.stop();
+     //was worker.stop(): closing the socket above already unblocks accept(),
+     //and stop() throws UnsupportedOperationException on modern JVMs
+     if(worker!=null)worker.interrupt();
   }
 
   public final void run(){
