@@ -1,0 +1,11 @@
+EchoServer demonstrates a trivial server built right on the top of 
+multithreaded server classes (org.is.Servlet) - on the layer which is lower than Messages
+(direct access to input/output streams)
+.It is just another possibility to utilize classes built in this project - for building
+any protocol multithreaded Java server.
+
+For running the example:
+
+1.cd to the example directory;
+2.start runServer.sh under Unix or runServer.bat under Win
+3.start runClient.sh under Unix or runClient.bat under Win

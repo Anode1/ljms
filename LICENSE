@@ -1,3 +1,14 @@
+LJMS is MIT licensed, with one exception: the legacy/ directory.
+
+  everything outside legacy/   MIT, below
+  legacy/                      GNU GPL v2, see legacy/LICENSE
+
+legacy/ holds the 2001 in-memory LJMS, an unrelated earlier program kept as a
+historical example. It shares no code with the queue in src/, and the two are
+here only as an archive beside a rewrite.
+
+--------------------------------------------------------------------------
+
 MIT License
 
 Copyright (c) 2026 Vasili Gavrilov

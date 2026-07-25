@@ -1,0 +1,77 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+
+<HEAD>
+	<META HTTP-EQUIV="Content-Type" CONTENT="text/html;CHARSET=iso-8859-1">
+	<TITLE>LJMS FAQs</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#C0C0C0">
+<H3>FAQs:</H3>
+<B>Are messages XML-compatible?</B><BR>
+No. LJMS must be fast and lightweight. One type of applications is network games when users (clients)
+emit few messages per second each. Another point against pure XML messages is distributed network application
+(loadbalancing solution is an example): if message passes several routers, each router (message distributor) has
+to deserialize/serialize message to know it's header. XML message would require to parse message in each router
+(which produces too many objects per message and requres much resources - routers are the bottleneck of the system -
+imagine if we have hundreds/thousands of messages per second). xml also adds an overhead. LJMS is more like extension
+of awt events (mouse events - example) in games or chat apps to distributed case rather than traditional
+JMS implementation.<BR>
+Although LJMS does not use XML for messages serialization (header, properties, data have been serialized
+in the fastest possible way - at least in Java :-), if application needs it, one can put XML into TextMessage (for example)
+and create/parse xml on application level. In that case routers (transport) will not parse xml and only end user applications
+will do it on application level.
+
+
+<BR><BR><B>Why not RMI?</B><BR>
+* Firstly, RMI sometimes is not available (PDA, J2ME, too many browsers versions)<BR>
+* Secondly - for some kind of applications when asynchronous delivery is needed (without<BR>
+blocking of the sender) - some Messaging abstraction should be implemented on top of RMI <BR>
+anyway. If ready, complete JMS can't be applied and more lightweight and fast solution is needed - <BR>
+LJMS is an option (RMI can be set as a transport as well - if desired -- the framework<BR>
+allows to switch transport layer).
+
+
+<BR><BR><B>Why not JINI?</B><BR>
+Jini is very cool technology and when all clients will support RMI, Jini, probably, will be the best solution for most cases<BR>
+(another problem - applets not support multicast or multicast can be restricted/prohibited etc).
+Most of the projects must be delivered very soon in today's reality. LJMS could be helpful in such cases as a quick lightweight solution.
+
+<BR><BR><B>I see swing classes in sources - how the core can be JDK1.0 compatible?</B><BR>
+The core is JDK1.0 compatible and swing classes are optional and are placed for optional swing GUI (they are not supposed
+to be deplayed to the client in the lightweight scenario).
+Several examples use the same classes and I just use CVS main repository for storing them there not
+to have replicated code in different examples. As something becomes reusable - it goes to the main tree.
+Probably this will be changed in future and GUI class tree will be separated from the framework CVS subtree.
+Or even separate subprojects will be spawn for some things. <BR>
+For example, LogManager is totally independent, self-sufficient module/package (BTW, JDK1.0 compatible) and can be considered as a subproject.
+
+<BR><BR><B>What about transactions support?</B><BR>
+Although currently there are no plans (at least in nearest future) to implement transactions on top of LJMS, it can be done in future as an option.
+Transactions could be done on the top of LJMS (in application level) using existing Messages - if desired.
+Again: there was no intention to replicate full-fledged JMS implementation (complete JMS API) which are available mainly targeting to work in JDK1.2+ server environment.
+
+<BR><BR><B>How streaming will be supported?</B><BR>
+Yes, it is planned to make support for streams (for high-performance streaming/piping applications).
+BTW, most existing MOM implementations working with Streams in the following way: they use use in-memory buffers
+for collecting bytes, so because of limited memory the application must on it's level cut stream into
+sub-arrays and to send data in series of messages separately (additional
+logic on the application level). If it is a streaming application and streams are big, and especially if
+multiple routers are used, those routers will be the bottleneck - imagine: network game or streaming/piping application
+with multiple clients). So, another possible domain of LJMS application might be relay server for streams (piping server)
+for streams filtering.
+
+<BR><BR><B>There is a Servlet class among other classes.
+Do I need to have a web-server and servlet engine for the broker?</B><BR>
+No. Core LJMS classes made for the broker implementation partly implement Servlet API to be able to reuse
+those classes in the case when the message abstraction is not good (see appropriate examples).
+The core class implements javax.servlet.Servlet, easy to work with because
+it is used widely in http context. Actually javax.servlet.Servlet interface is more general been
+abstracted from the protocol (like we have), so we use it for different types of transport
+rather than as an HTTPServlet. In the meanwhile we just partly implement the generic javax.servet.Servlet
+and if complete implementation will be needed it could be done. <BR>
+
+
+</BODY>
+
+</HTML>

@@ -1,0 +1,82 @@
+TrivialChat example illustrates how LJMS can be used in applet context.
+
+Although it's funcionality is very primitive (as it's name hints), it could be taken as the base
+for any complexity chat application with any business logic: one can extend MessageServlet
+and MessageContext for the server part of the broker adding necessary data-structures
+(Collections etc - as users/clients views) - if needed. 
+Notice: TrivialApplet example does not extend MessageServlet class: it uses the default built-in
+Collection from that class (all users sessions collection), extending only MessageContext
+(default router - MessageContext - does nothing with messages on the server side), 
+so for trivial chat functionality we had at least to broadcast messages
+to all the clients (which is done by means of broadcast() built-in method). 
+Less trivial chatServers probably will define their own views of clients (probably in multiple
+Collections: groups of users, different categories of users etc) in MessageContext subclasses
+and will add/remove them (to those collections) from MessageServlet subclass 
+(see other examples illustrating this).
+The main rule: when user connects, single instance of MessageServlet (or it's subclass) 
+will be created on the server for it. The common structure (context) visible for all such servlets
+is MessageContext which plays the role of wire or glue, connecting all MessageServlet instances.
+
+This example uses LSessionRunnableImpl class (threaded version of session),
+which means that session has built-in thread and it calling back message/error
+listeners (without it - broker does nothing), in our case - applet class.
+See app2app example how LSessionImpl class (not threaded session) is used
+for synchronius message delivery (in user application thread).
+
+
+To run example:
+1.cd to the example directory;
+2.start runServer.sh under Unix or runServer.bat under Win on the same machine where you have a running web-server.
+3.put index.html, images directory and applet.jar under the root of the web-server (or alternatively run appletviewer)
+4.point a browser to index.html
+
+For brevity necessary code snippets from this example are here:
+
+SERVER:
+      Servlet server=new org.is.server.MessageServlet(new TrivialChatRouter());
+      server.startService(port);
+
+
+CLIENT:
+
+    LSessionRunnableImpl messageCentral;
+    
+    //INITIALIZE AND START THE BROKER:
+    try{
+      messageCentral=new LSessionRunnableImpl();
+      messageCentral.setMessageTransport(new MessageSocket(host, port));
+      messageCentral.setMessageListener(this);
+      messageCentral.setExceptionListener(this); //if not set - printing to console
+      messageCentral.connect();                  //make connection (init)
+      messageCentral.start();                    //start message delivery
+    }
+    catch(JMSException e){
+      System.err.println("Error connecting:"+e);
+    }
+    
+    ....
+    //SOMEWHERE IN THE CODE:
+    sendStringMessage(input.getText()); //caused by GUI thread
+    ....
+    
+    private void sendStringMessage(String str){
+  
+     try {
+       Message ms=new MessageImpl();
+       ms.setStringProperty("text",str);
+       messageCentral.sendMessage(ms);
+     }
+     catch (Exception e) {
+       System.out.println("Can't send message: " + e);
+     }
+    }
+    
+    //FREE RESOURCES (close session at the end of the work with broker):
+    public void stop(){
+
+     try{
+       messageCentral.close();
+     }
+     catch(Exception e){
+     }
+    }    

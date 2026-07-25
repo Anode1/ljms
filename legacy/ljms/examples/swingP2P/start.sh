@@ -1,0 +1,1 @@
+java -classpath ./service.jar:%CLASSPATH% org.is.gui.MainFrame

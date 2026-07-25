@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+
+<HEAD>
+	<META HTTP-EQUIV="Content-Type" CONTENT="text/html;CHARSET=iso-8859-1">
+<meta name="keywords" content="JMS free P2P JVM RMI applets sockets framework Java distributed network multiplayer games LogManager chat conferencing collaboration HTMLEditor browser push programming">
+<meta name="description" content="LJMS is a message broker for easier Java distributed network applications programming. Mostly appropriate for applet/server or JVM/JVM communication (P2P) where performance is an issue or RMI is not available on the client.">
+
+	<META NAME="GENERATOR" Content="Visual Page 1.1a for Windows">
+	<TITLE>Main page</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#C0C0C0">
+
+<P>
+<TABLE BORDER="0" WIDTH="100%">
+	<TR>
+		<TD WIDTH="19%"><IMG SRC="marvels.jpg" WIDTH="150" HEIGHT="220" ALIGN="BOTTOM" BORDER="0"></TD>
+		<TD WIDTH="81%">
+			<H4 ALIGN="CENTER"></H4>
+			<CENTER>
+			<P>
+			<TABLE BORDER="0" WIDTH="100%" HEIGHT="80%">
+				<TR>
+					<TD WIDTH="100%" HEIGHT="37">
+						<P ALIGN="CENTER">&lt;Someone's banner&gt;
+					</TD>
+				</TR>
+				<TR>
+					<TD WIDTH="100%" HEIGHT="129">
+						<P ALIGN="CENTER"><FONT SIZE="6" COLOR="#0000FF"><B>LJMS-Lightweight Java</B></FONT><FONT SIZE="1" COLOR="#0000FF"><SUP><B>TM</B></SUP></FONT><FONT
+						SIZE="6" COLOR="#0000FF"><B> Message System</B></FONT>
+					</TD>
+				</TR>
+			</TABLE>
+
+</CENTER>
+		</TD>
+	</TR>
+</TABLE>
+</P>
+<P>
+<TABLE BORDER="0" WIDTH="100%">
+	<TR>
+		<TD WIDTH="17%" HEIGHT="157" VALIGN="TOP">
+			<P ALIGN="CENTER"><A HREF="faq.html">FAQs</A><BR>
+			<A HREF="http://sourceforge.net/projects/ljms/">Project Page</A><BR>
+			<A HREF="demo.html">Demo</A><BR>
+			<A HREF="legal.html">Legal</A><BR>
+			<A HREF="anoncvs.html">AnonCVS</A><BR>
+			<A HREF="http://cvs.sourceforge.net/cgi-bin/viewcvs.cgi/ljms/common/">Browse CVS</A><BR>
+			<A HREF="javadoc/index.html">JavaDoc</A><BR>
+			<A HREF="http://sourceforge.net/project/showfiles.php?group_id=23114">Download</A><BR>
+			<A HREF="todo.html">Contributing</A><BR>
+			<A HREF="contact.html">Contact Info</A></P>
+
+			<P ALIGN="CENTER"><BR>
+			<BR>
+			<BR>
+			<A HREF="http://sourceforge.net"><IMG SRC="http://sourceforge.net/sflogo.php?group_id=23114" WIDTH="88" HEIGHT="31"
+			ALIGN="BOTTOM" ALT="SourceForge Logo" BORDER="0"></A>
+		</TD>
+		<TD WIDTH="83%" HEIGHT="157">
+			<P>LJMS is a framework for building network Java applications (multithreaded custom protocol servers or P2P nodes)
+			which can use different types of network transport, isolating an application from it. It allows an application
+			programmer to concentrate on business logic rather than on the communication part.<BR>
+			For most applications communication logic can be abstracted by message sending/routing and JMS API message set
+			is sufficient in most cases. In case when reducing network communication to message sending abstraction is inefficient,
+			the framework provides an optional API to access streams directly through Servlet API (Probably most of the servers
+			like ftp, http, smtp etc should use that lower layer) - see appropriate examples. In that case the framework will
+			still provide thread/session pooling/caching, error/logs handling and other services provided by application servers
+			(LJMS can be seen as a lightweight application server).
+			<BR>
+
+			Technically LJMS is a lightweight message broker having	layered structure (layers are separated by interfaces).
+			It can be useful for applet/server or JVM/JVM communication
+			where performance is an issue or RMI is not available on one of communication nodes (jre1.0 browser, PDA, small
+			application). Messages used for communication are JMS compatible but on the place of standard JMS javax.jms.Session,
+			a lightweight analog has been used to avoid downloading of the whole JMS API package (JMS API classes are highly
+			interdependant) and to make things on the client (node) simpler. There is only one message queue between applet
+			and server JVM and JNDI, been used in standard complete JDK1.2 JMS implementations, is obsolete in applet context
+			or where RMI is not available.</P>
+
+			<P>How it relates to P2P? Well, P2P applications are networks applications without centralized server where participants
+			of the communication are 2 or more equal-rights nodes (if we use Java - then the nodes are extended Java VMs).
+			Peers connect to each other (although different P2P applications get addresses to connect to in different ways).
+			Each node acts both as client and as server,  having 2 logical parts (hidden from the user but obvious for a programmer):
+			client part, which actually makes/initiates connection to another node (connection initiator) and the server part,
+			waiting for connections from other nodes being a small but full analog of regular servers. In the last case an
+			application internally is waiting for a connection on some port, spawning a thread for each connection, holding
+			thread/session pools, caching them, handling/logging errors etc). And in each network application a programmer
+			has to reinvent all such things (if a complete P2P solution like JINI can't be used for some reason - like in applets
+			or some environments). So, LJMS could help in those cases or in cases when full-fledged JMS implementations are
+			too heavy (custom solutions). Example - an application communicating with the server during the installation, making
+			automatic upgrading etc. </P>
+
+			<P>Another interesting application is browser push (see in an example). Since messages have been delivered asynchronously
+			and without acknowledgement, a group of lightweight LJMS servers can work in a concert as a loadbalancing solution
+			easy to program. Synchronious behaviour is possible as well and both acknoledgement and transactions can be added
+			on business logic layer - if needed. <BR>
+			Look into examples (<href a="demo.html">demo) for other types of applications where the framework can be used.</P>
+
+			<P><B>History</B><BR>
+			The first versions of the broker used proprietory messages and was working robustly enough in multiple commercial
+			applications. To make less modifications making new applications and new types of routers (java nodes redirecting
+			those messages) it was decided to use some standard message format. Sun's JMS messages set is complete, sufficient
+			for most applications needs and standard: no learning is needed if somebody already worked with them), so the initial
+			intention was to use standard JMS messages but to create Connection and Queue objects rather than get them from
+			JNDI. In the meanwhile, full JMS implementation would require:</P>
+			<UL>
+				<LI>Extra download of not necessary JMS classes (API+implementations) as a consequence of multiple classes interdependencies;
+				much more heavy-weight classes with unnecessary for applets (communicating only with it's server) functionality
+				(in most applets only one type of message and one Destination have been used while in accordance to JMS spec all
+				JMS classes have to be downloaded - a big footprint);
+				<LI>At least jdk1.1 Serialization support (used by standard JMS classes). On the contrary, we want to support jdk
+				1.0 which is very significant for applets or micro JVMs. Externalizable interface has been used to make serialization
+				as fast as possible (without Serialization overhead - significant for big number of messages where message contains
+				simple information);
+			</UL>
+			<P>So, it was decided not to follow JMS API in all aspects but still not to reinvent message format (it is natural
+			and well elaborated in JMS). JMS is more suitable for server side tasks where events have been emitted not so frequently.
+			At the same time, if desired, LJMS messages can be wrapped into JMS ByteMessage at the backend (if LJMS is used
+			as applet/server broker) and existing JMS infrastructure can been applied for delivering on the backend. For other
+			technical details, see FAQs.
+		</TD>
+	</TR>
+	<TR>
+		<TD WIDTH="17%"></TD>
+		<TD WIDTH="83%">&nbsp;</TD>
+	</TR>
+</TABLE>
+</P>
+<P>
+<HR ALIGN="CENTER" WIDTH="54%">
+</P>
+<P ALIGN="CENTER">(C) 2001 Vasili Gavrilov
+
+</BODY>
+
+</HTML>

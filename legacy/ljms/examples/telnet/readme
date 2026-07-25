@@ -1,0 +1,12 @@
+It is just a demo and not full-fledged telnet client.
+It is a little bit more complex than Echo server made 
+for demonstrating how to built any protocol
+multi-threaded server using the framework on the lower layer than Messages (direct access
+to Input/Output streams). 
+
+For running the example:
+
+1.cd to the example directory;
+2.start runServer.sh under Unix or runServer.bat under Win
+3.start runClient.sh under Unix or runClient.bat under Win
+

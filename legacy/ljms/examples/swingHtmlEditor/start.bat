@@ -1,0 +1,1 @@
+java -classpath editor.jar;classes;%CLASSPATH% org.is.html.GHTMLEditorFrame

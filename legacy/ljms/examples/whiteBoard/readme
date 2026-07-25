@@ -1,0 +1,7 @@
+To run example:
+1.cd to gameserver directory;
+2.start runServer.sh under Unix or runServer.bat under Win
+3.put index.html, images and whiteboard.jar under web root
+(or alternatively run appletviewer)
+4.open index.html using a browser
+5.enjoy

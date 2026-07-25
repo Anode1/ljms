@@ -1,0 +1,64 @@
+app2app is the simplest case of LJMS usage for application - application communication
+ (synchronious message delivery) where one Java application acts as a client and another one - as the server only
+(so only one JVM here initiates message communication, although messages are
+going in 2 directions while connection is established and 2 message terminals
+(MessagePortal) are equal in rights: both can send messages while connection is alive
+and both can close connection: assymetry here is in who can initiate and who is
+waiting for a connection).
+P2P node application will rather have equal rights having both client and server
+parts in the same JVM, which means - it will instantiate either an instance
+of org.is.net.Servlet class (server part) and LSessionImpl subclass instance
+(connection initiating part of the broker).
+For extending this example to such P2P node base, one should add the following
+line (instantiating and starting the server part) to the client:
+  (new org.is.server.MessageServlet(new MessageRouter())).startService(port);
+and to write the necessary logic (what to do with Messages when they arrive).
+
+Notice that this example uses simple LSessionImpl vs LSessionRunnableImpl which has
+been used in the app2appAsynch example. In the last case Session has it's own
+built-in thread making callbacks to user classes when messages arrive (asynchronous delivery)
+while in this example user creates thread by himself poolling messages from
+LSessionImpl in the loop on the client in synchronious manner.
+
+
+To run example:
+1.cd to the example directory;
+2.start runServer.sh under Unix or runServer.bat under Win
+3.start runClient.sh under Unix or runClient.bat under Win
+
+
+For brevity necessary code snippets are here:
+
+SERVER:
+      Servlet server=new org.is.server.MessageServlet(new MessageRouter());
+      server.startService(port);
+
+CLIENT:
+
+    LSessionImpl messageCentral;
+
+    //INITIALIZE AND START THE BROKER BEFORE USING IT:
+    messageCentral=new LSessionImpl();
+    messageCentral.setMessageTransport(new MessageSocket("localhost", 6111));
+    messageCentral.connect();                  //make connection (init)
+
+    ....
+
+    //SOMEWHERE IN THE CODE (read messages if there are in synch manner):
+    Message msg=messageCentral.getMessage();
+
+         //do whatever with the message here...
+         //notice: we are blocked here while there are no messages - that is why we put it into the thread
+         //see preface to this example for simpler usage (LSessionRunnableImpl)
+    ....
+
+    //USER CAN SEND MESSAGES FROM ANY PLACE/ANY TIME USING messageCentral (constructing any type of Message supported):
+    Message ms=new MessageImpl();
+    ms.setStringProperty("text",line);
+    client.messageCentral.sendMessage(ms);
+
+    ...
+
+    //FREE RESOURCES (close session at the end of the work with broker):
+    messageCentral.close();
+

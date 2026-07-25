@@ -1,0 +1,29 @@
+<html>
+<head></head>
+
+<SCRIPT>
+
+function refreshData(text){
+  top.content_frame.location.replace('about:blank');
+  var newtext;
+  top.content_frame.document.write(text);
+}
+</SCRIPT>
+<body>
+
+<applet
+ name="AgentApplet"
+ code="AgentApplet.class"
+ archive="agent.jar"
+ width=1
+ height=1
+ MAYSCRIPT
+>
+
+<param name="url" value="http://127.0.0.1/servlet/cc.MainServlet">
+
+</applet>
+
+
+</body>
+</html>

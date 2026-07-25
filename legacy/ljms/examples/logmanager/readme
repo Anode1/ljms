@@ -1,0 +1,11 @@
+This example illustrates how to use LogManager. 
+LogManager is a separate subproject and is self-sufficient and can be utilized 
+in other projects: it runs in separate thread (not blocking main application), supports any
+number of debug levels and 3 channels (stdout, stderr and events). One LogManager instance
+per VM will be created automatically in user.dir if not explicitly created by one of the factories.
+For explanations look into comments in the source.
+
+
+
+
+

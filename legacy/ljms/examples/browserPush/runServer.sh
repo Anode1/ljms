@@ -1,0 +1,1 @@
+java -classpath ./server.jar:%CLASSPATH% Server -cp 6285

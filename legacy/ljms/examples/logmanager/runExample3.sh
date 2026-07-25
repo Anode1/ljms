@@ -1,0 +1,1 @@
+java -classpath .:../../lib/ljms.jar:%CLASSPATH% Example3

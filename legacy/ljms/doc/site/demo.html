@@ -1,0 +1,103 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+
+<HEAD>
+	<META HTTP-EQUIV="Content-Type" CONTENT="text/html;CHARSET=iso-8859-1">
+	<TITLE>untitled</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#C0C0C0">
+
+<P>
+
+
+<B>This document contains quick description of each example.
+</B>
+
+Download all examples in zip form or compressed tar and uncompress them into some dir
+using your favourite unzip tool under Win or tar -xvzf examples.tar.gz under Unix.<BR>
+(if you have downloaded the whole LJMS package - it includes examples already)
+Follow instructions (readme) for each example.<BR>
+(Notice: all examples use the same port for client/server communication, so you have
+to kill previously started example server to run another example, otherwise you will
+get "java.lang.BindException: address in use" error)
+<P>
+
+<H3>The following are quick descriptions of each example:</H3>
+
+<B>app2appAsync</B> is the simplest example demonstrating how to use message broker for application - application
+communication via JMS compliant messages (jdk1.0 compatible). Messages have been delivered asynchroniusly
+in this example (see app2app example also). Although in this example we have
+client and server parts separated (one VM acts as a client, another one - as the server),
+we can add server part into client's code and will get 2 applications totally equal in rights
+(i.e. each VM can initiate communication independently). Notice also that while connection is
+established, both nodes can send messages at any time because it is 2-way message communication.
+See other documentation (including JavaDoc) and other examples.<BR>
+Server broadcasts all messages it receives to all connected clients (nodes).
+
+<P>
+<B>app2app</B> is the same as app2appAsynch but user's thread controls message delivery (vs asynchroniuos
+delivery in the first case when LSessionRunnableImpl makes callbacks to the listener).
+
+<P>
+<B>trivialChat</B> is equivalent to app2appAsync example with the difference that message broker
+has been used from JDK1.0 compliant applet. Applet also has some minimal GUI.
+It is too trivial chat functionality: every message has been broadcasted to all connected,
+not authenticated clients. For more functional example see sharedWhiteboard example
+
+<P>
+<B>whiteboard</B> server broadcasts messages to all connected clients
+where messages carry some data (in this case - points). Clients in this example
+are applets, but applications or servlets can participate (connect to the server)
+as well.
+
+<P>
+<B>browserAgent</B> shows how invisible applet can be used for message delivery of html text to be pushed
+into browser by means of JSObject. If multiple instances of browsers are pointing to
+test_frames.html then the text printed on the server will be printed immediately into all
+browsers.
+
+<p>
+<B>browserPush</B> demonstrates how browsers objects of multiple browsers can be manipulated from the server
+for building of conferencing-type applications. Four different commands have been defined to demonstrate how
+simple script can be built for server-side interactive scripting.
+
+into browser by means of JSObject. If multiple instances of browsers are pointing to
+test_frames.html then the text printed on the server will be printed immediately into all
+browsers.
+
+<P>
+<B>echo,<BR> telnet</B><BR> and <BR><B>gnutella</B> - are 3 examples showing how to use the framework when JMS Messages
+are not good abstraction and direct access to streams is more appropriate for the application
+still reusing other parts of the framework.
+
+<P>
+<B>logmanager</B> example shows how logmanager can be used separately for other applications
+(it is self-sufficient package and may be considered as a subproject)
+
+<P>
+<B>gameserver</B> is a custom built server showing how to add application-specific
+logic adding only one class (message router or context). This example is used
+by whiteboard clients.
+
+<P>
+<B>swingP2P</B> demonstrates rich P2P node GUI. Each application has both client and server part
+inside (unlike abovementioned examples). It allows to manage different types of services
+proveded by the node, start/stop them, change ports. It contains clients for connecting to
+other nodes. It is more general than traditions gnutella applications because it allows
+to plug-in any protocol nodes (not only gnutella) and more like general service manager popular
+OS has with additional client parts additionally.
+
+<P>
+<B>relay</B> is message relay server used for load-balancing when applets have been
+downloaded from multiple servers but which should share some common data. They communicates
+here in asynchronous way not blocking some monitor or transaction server which would
+be a bottleneck in this case. It is suitable for multiplayer games, chats.
+
+<P>
+<B>swingHtmlEditor</B> is WYSIWYG html editor which can be considered as a separate subproject.
+It is planed to be used in future as a part of more complex P2P application.
+
+</BODY>
+
+</HTML>

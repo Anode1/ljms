@@ -1,0 +1,13 @@
+This example shows how to use invisible applet/agent for pushing text into the browser
+(push channel) using LJMS broker and JSObject from the server which can be used as
+an idea for building of more complex conferencing tools (broadcasters).
+
+To run it:
+1.cd to the example directory and start runServer.sh under Unix or runServer.bat under Win
+on the same machine where you have a web-server;
+2.put the following 3 files under the web-server (htdocs for Apache):
+text_frames.html, text_index.html and agent.jar
+3.Open a browser (or multiple instances) against text_frames.html
+4.Type something into the console (on the server) and press Enter at the end. Text you have typed should appear
+in all browsers instances (having an applet - agent being connected). You can type directly
+into the browser.

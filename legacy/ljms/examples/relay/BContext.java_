@@ -1,0 +1,435 @@
+/**
+ * @(#)BContext.java
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+package org.is.server;
+
+import java.io.IOException;
+import java.util.Enumeration;
+import java.util.Vector;
+import java.util.Hashtable;
+import java.util.StringTokenizer;
+
+import org.is.logmanager.*;
+
+/**
+ * Comon shared by all client threads application data
+ *                                          
+ * @author Marina Gavrilov
+ * @version 1.0
+ * @since   JDK1.0
+ */
+public class BContext extends Context{
+
+  private Vector servers = new Vector(3);  //pointers to all server Threads
+
+  public BContext(){
+  }
+
+  public void addAnotherServer(ServerConnection sc){
+
+    servers.addElement(sc);
+    if(log.debugLevel(DebugLevel.DEBUG_THREADS))log.printDebug(getServersList());
+  }
+
+  public void real_broadcast(CSMessage msg, CSMessageConnection sourceThread){
+
+    if(sourceThread instanceof ClientConnection){
+      if(log.debugLevel(DebugLevel.DEBUG_MESSAGE_DISTRIBUTION))log.printDebug("real_broadcast:"+msg.getCommand()+" from:"+((ClientConnection)sourceThread).getAlias());
+    }
+    else if(sourceThread instanceof ServerConnection){
+      if(log.debugLevel(DebugLevel.DEBUG_MESSAGE_DISTRIBUTION))log.printDebug("real_broadcast:"+msg.getCommand()+" from:"+((ServerConnection)sourceThread).getHostPort());
+    }
+    else{
+       log.printError("real_broadcast: unknown type");
+    }
+
+    //ALL SERVERS:
+    synchronized(servers){
+
+        ServerConnection toThread=null;
+
+        for(Enumeration enum = servers.elements(); enum.hasMoreElements() ;){
+
+            toThread=(ServerConnection)enum.nextElement();
+
+            if(sourceThread instanceof ServerConnection){     //from server to a server
+                  //nothing
+            }
+            else if(sourceThread instanceof ClientConnection){ //from client to a server
+                if(!sourceThread.equals(toThread))toThread.sendMessage(msg);
+                if(log.debugLevel(DebugLevel.DEBUG_MESSAGE_DISTRIBUTION))log.printDebug("real_broadcast::msg:"+msg.getCommand()+" sent to server : "+toThread.getHostPort());
+            }
+            else log.printError("ThreadsContainer::real_broadcast:unknown instance");
+        }
+        
+    }//synchronized
+
+    //ALL CLIENTS:
+    synchronized(clients){
+
+        ClientConnection toThread=null;
+
+        for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+            toThread=(ClientConnection)enum.nextElement();
+            toThread.sendMessage(msg);
+
+        }//for
+
+    }//synchronized
+
+  }
+
+  /**
+   * sends a message "msg" to the specified client (peer to peer)
+   */
+  public void sendToClient(CSMessage msg, ClientConnection sourceThread){
+
+    //synchronized(clients){
+
+       ClientConnection toThread=null;
+       for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+            toThread=(ClientConnection)enum.nextElement();
+
+            if (toThread.equals(sourceThread)) {
+                toThread.sendMessage(msg);
+                if(log.debugLevel(DebugLevel.DEBUG_MESSAGE_DISTRIBUTION))log.printDebug("msg "+msg.getCommand()+" sent to client: "+toThread.getAlias());
+                break ;
+            }
+       }
+
+    //}//synchronized
+
+  }
+       
+  /**
+   * here is where we handle any input received from a Client
+   * This method is called by ClientThread directly
+   */
+  public void handleMessage(CSMessage msg, CSMessageConnection sourceThread) throws IOException{
+
+
+       if(msg==null){
+          log.printError("ThreadsContainer::handleInput:message is null!");
+          return;
+       }
+
+       byte cmd=msg.getCommand();
+
+       if(cmd==0){
+          log.printError("ThreadsContainer::handleInput:command is null!");
+          return;
+       }
+
+       if(log.debugLevel(DebugLevel.DEBUG_MESSAGE_DISTRIBUTION))log.printDebug("Context::handleMessage: message="+msg);
+
+       String val=msg.getValue();
+       String name=msg.getName();
+       CSMessage message=null;   //for new messages
+
+
+       if(cmd==CSMessage.LOGIN) {
+
+         //System.out.println(getClientsList());
+         //we should send this dummy message to clean the system off
+         //dead threads (when a user closes the browser, his socket is still open,
+         //so the thread still be in the system)
+         real_broadcast(new CSMessage(CSMessage.DUMMY,null, name), (ClientConnection)sourceThread);
+
+
+         String newName = name+"-"+Long.toString(System.currentTimeMillis()&0xff );
+
+         if(sourceThread instanceof ClientConnection)
+           ((ClientConnection)sourceThread).setAlias(newName);
+
+         message = new CSMessage(CSMessage.LOGIN, null, newName);
+         sendToClient(message, (ClientConnection)sourceThread);
+
+
+          message = new CSMessage(CSMessage.LIST, clientsListToString(), newName);
+          real_broadcast(message, sourceThread);
+
+          message = new CSMessage(CSMessage.ENTER, newName+" has entered.", newName);
+          real_broadcast(message, sourceThread);
+
+          LogManager.getInstance().printEvent("New Client: "+newName);
+
+
+         return ;
+
+       }
+
+
+       else if(cmd==CSMessage.INVITATION) {
+
+           StringTokenizer st = new StringTokenizer(val, ",");
+           String whomToInvite = st.nextToken();
+           String whatGame = st.nextToken();
+
+           ClientConnection toThread;
+
+
+           for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+               toThread=(ClientConnection)enum.nextElement();
+
+               if (toThread.getAlias().equals(whomToInvite)) {
+                    msg.setValue(name+","+whatGame);
+                    sendToClient(msg, toThread);
+                    break;
+                }
+            }
+
+
+          return ;
+       }
+
+       else if(cmd==CSMessage.ACCEPT_INVITATION) {
+           StringTokenizer st = new StringTokenizer(val, "||");
+           String whoInvited = st.nextToken();
+           String target = st.nextToken();
+
+           //System.out.println("ACCEPT_INVITATION:: whoInvited = "+whoInvited+"; target = "+target );
+
+           ClientConnection toThread;
+
+           for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+               toThread=(ClientConnection)enum.nextElement();
+
+               if (toThread.getAlias().equals(target)||toThread.getAlias().equals(whoInvited)) {
+                    toThread.setPassword(val);//let's set the new password to the both players;
+                    sendToClient(msg, toThread);//and send this new password to both of them;
+
+                }
+
+              message = new CSMessage(CSMessage.LIST, clientsListToString(), name);
+              real_broadcast(message, sourceThread);
+          }
+       }
+
+       else if(cmd==CSMessage.REJECT_INVITATION) {
+
+           StringTokenizer st = new StringTokenizer(val, ",");
+           String target = st.nextToken();
+           String whoRejected = st.nextToken();
+           ClientConnection toThread;
+
+         for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+               toThread=(ClientConnection)enum.nextElement();
+
+               if (toThread.getAlias().equals(target)) {
+                    msg.setValue(whoRejected);
+                    sendToClient(msg, toThread);
+                    break;
+                }
+          }
+       }
+
+        else if(cmd==CSMessage.SET_PASSWORD_BACK) { //set the default group password == null to both players
+
+           StringTokenizer st = new StringTokenizer(val, "||");
+           String whoInvited = st.nextToken();
+           String whoIsInvited = st.nextToken();
+
+
+           String source, target;
+           //let's define who has left the game, so we'll send an appropriate message to the second player
+           if(((ClientConnection)sourceThread).getAlias().equals(whoInvited)) {
+              source = whoInvited;
+              target = whoIsInvited;
+           }
+           else {
+              source = whoIsInvited;
+              target = whoInvited;
+           }
+
+           ClientConnection toThread;
+
+           for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;){
+
+               toThread=(ClientConnection)enum.nextElement();
+
+               if (toThread.getAlias().equals(target)){
+                    message=new CSMessage(CSMessage.ALONE, source, name);
+                    sendToClient(message, toThread);
+
+                    toThread.setPassword("null");//let's set the group password to the both players;
+                    sendToClient(msg, toThread);//and send this new password to both of them;
+
+               }
+               else if (toThread.getAlias().equals(source)) {
+                    toThread.setPassword("null");//let's set the group password to the both players;
+                    sendToClient(msg, toThread);//and send this new password to both of them;
+
+                }
+          }
+             message = new CSMessage(CSMessage.LIST, clientsListToString(), name);
+             real_broadcast(message, sourceThread);
+        }
+
+
+       else if(cmd==CSMessage.STARTOVER) {
+             broadcast(msg, sourceThread);// broadcast
+       }
+
+       else if(cmd==CSMessage.REMOVE) {
+
+         if(sourceThread instanceof ClientConnection)
+           removeClient((ClientConnection)sourceThread);
+
+       }
+       else if(cmd==CSMessage.LOGOUT) {
+
+          if(sourceThread==null){
+              log.printError("sourceThread==0?");
+              return;
+          }
+
+ 	        if(sourceThread instanceof ServerConnection){
+
+
+             message = new CSMessage(CSMessage.LIST, clientsListToString(), name);
+             real_broadcast(message, sourceThread);
+
+             msg.setValue(name+" has left.");
+             real_broadcast(msg, sourceThread);
+          }
+	      }
+
+        else if(cmd==CSMessage.SAY) {
+
+             //in order not to duplicate the message "aClient says: " when sent by a server
+             if(sourceThread instanceof ClientConnection)
+                  msg.setValue(name+" says: "+val);
+             else
+                  msg.setValue(val);  //if from another server thread
+
+             broadcast(msg, sourceThread);
+
+             return ;
+        }
+
+        else if(cmd==CSMessage.SOUND) {
+             broadcast(msg, sourceThread);
+        }
+        else if(cmd==CSMessage.DATA){
+
+              broadcast(msg, sourceThread);
+        }
+        //else log.printError("ThreadsContainer::handleInput:unknown command:"+cmd);
+  }//handleInput
+
+
+  /**
+   * Called only from thread when exiting
+   */
+
+
+  public void removeClient(ClientConnection tempThread){
+
+
+     String temp;
+     String name=tempThread.getAlias();
+
+     //System.out.println("removeClientThread : "+name+" / "+password);
+
+     if(clients.contains(tempThread)) {
+        clients.removeElement(tempThread);
+
+        if(!name.equals("null")) {
+
+        CSMessage message = new CSMessage(CSMessage.LIST, clientsListToString(), name);
+        real_broadcast(message, tempThread);
+
+        message=new CSMessage(CSMessage.LOGOUT,name+" has left.", name);
+        real_broadcast(message, tempThread);
+        }
+
+        LogManager.getInstance().printEvent("Client thread: "+name+" has been removed");
+        if(log.debugLevel(DebugLevel.DEBUG_THREADS))log.printDebug(getClientsList());
+     }
+  }
+
+  /**
+   * Called only from thread when exiting
+   */
+  public void removeServer(ServerConnection tempThread){
+
+     servers.removeElement(tempThread);
+
+     if(log.debugLevel(DebugLevel.DEBUG_THREADS))log.printDebug("dead server thread "+tempThread.getHostPort()+" removed");
+     if(log.debugLevel(DebugLevel.DEBUG_THREADS))log.printDebug(getServersList());
+  }
+
+
+String aName, aPassword;
+
+ public synchronized String clientsListToString(){
+
+     StringBuffer sb=new StringBuffer("");
+     int n=clients.size();
+
+     for (int i=0; i<n; i++ ){
+          ClientConnection aClient = (ClientConnection)clients.elementAt(i);
+
+          aName = aClient.getAlias();
+          aPassword = aClient.getPassword();
+
+          if(!aName.equals(null)) {
+            sb.append(aName+"&"+aPassword);
+            if(i<clients.size()-1)sb.append("&");
+          }
+     }
+     return sb.toString();
+  }
+
+
+  /**
+   * For debugging purposes
+   */
+
+
+  public String getClientsList(){
+
+     StringBuffer sb=new StringBuffer("Clients threads:{");
+     ClientConnection tempThread=null;
+     for(Enumeration enum = clients.elements(); enum.hasMoreElements() ;) {
+	      tempThread = (ClientConnection)enum.nextElement();
+        sb.append(tempThread.getAlias());
+        sb.append("/");
+        sb.append(tempThread.getGroupPassword());
+        if(enum.hasMoreElements())sb.append(",");
+     }
+     sb.append("}");
+     return sb.toString();
+
+  }
+
+  /**
+   * For debugging purposes
+   */
+  public  String getServersList(){
+
+      StringBuffer sb=new StringBuffer("Other working servers threads:{");
+      ServerConnection tempThread=null;
+      for(Enumeration enum = servers.elements(); enum.hasMoreElements() ;) {
+         tempThread=(ServerConnection)enum.nextElement();
+         sb.append(tempThread.getHostPort());
+         if(enum.hasMoreElements())sb.append(",");
+      }
+      sb.append("}");
+      return sb.toString();
+  }
+
+  //there is no need to do finalization here since Threads will be
+  //garbagecollected by an implementation of org.is.net.ThreadContainer (thread engine)
+  // org.is.net.ThreadContainer - an implementation
+}

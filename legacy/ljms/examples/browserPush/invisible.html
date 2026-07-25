@@ -1,0 +1,33 @@
+<html>
+<head></head>
+
+<SCRIPT>
+function addContent(text){
+  var newtext;
+  top.content_frame.document.write(text);
+}
+
+function setContent(text){
+  top.content_frame.location.replace('about:blank');
+  var newtext;
+  top.content_frame.document.write(text);
+}
+</SCRIPT>
+<body>
+
+<applet
+ name="AgentApplet"
+ code="AgentApplet.class"
+ archive="agent.jar"
+ width=1
+ height=1
+ MAYSCRIPT
+>
+
+<param name="port" value="6285">
+
+</applet>
+
+
+</body>
+</html>

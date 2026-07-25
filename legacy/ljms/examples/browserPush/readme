@@ -1,0 +1,12 @@
+In this example LJMS is used for conferencing application. 
+Invisible applets (agents) sit in invisible frames. 
+Applets connect with the server during initialization faze, so the server must be running.
+
+Communication protocol with browser is very simple here:
+
+add text <Enter>       - adds a text to the panel
+clean <Enter>          - cleans browser
+clear text <Enter>     - cleans browser's panel (content frame) and puts text text on it's place
+file filename <Enter>  - opens a file on the server side and pushes it to the frame substituting previous content
+
+

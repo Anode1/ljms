@@ -308,7 +308,7 @@ test/         StateMachineTest (the prover), QueueTests (behaviour + race), Benc
 sql/          mysql, postgres, oracle, mssql
 doc/          Queue_States.txt   the specification the prover reads
               development.txt    internals, invariants, porting, design notes
-legacy/       about the 2001 original. Its source is not published here
+legacy/       the 2001 original, GPL v2, kept as an example
 queue.sh      start | run | stop | status
 ```
 
@@ -321,7 +321,7 @@ Both drop and recreate the table on every run, so point them at a database you d
 
 ## History
 
-The first LJMS, in 2001, was a small open-source library implementing the JMS interface over an in-memory queue, hence the name. Different mechanism from this one, since the queue lived in the process and did not survive a restart, but the same idea underneath: a unit of work carries its own state, and whichever worker is free takes the next one.
+The first LJMS, in 2001, was a small open-source library implementing the JMS interface over an in-memory queue, hence the name. Different mechanism from this one, since the queue lived in the process and did not survive a restart, but the same idea underneath: a unit of work carries its own state, and whichever worker is free takes the next one. It is in [`legacy/`](legacy/), kept as an example rather than as working software, and under GPL v2 rather than this project's MIT. SourceForge, where it lived, deleted the project years ago, so that copy may be the only one left.
 
 The author has built this shape four times since, in systems that have between them been running for decades. The direct ancestor has processed Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five. Every one of them was arranged the way the section above describes: a web tier put the work in and showed each task's status from the same table, while separate worker processes took the tasks and ran them. Long jobs, minutes to hours, with users watching progress on a page.
 

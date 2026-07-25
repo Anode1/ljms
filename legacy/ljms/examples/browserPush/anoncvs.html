@@ -1,0 +1,32 @@
+<HTML>
+
+<HEAD>
+	<TITLE>untitled</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#C0C0C0">
+
+<H2>Anonymous CVS Access </H2>
+<P>This project's CVS repository can be checked out through anonymous (pserver): <BR>
+</P>
+
+<P>cvs -z3 -d:pserver:anonymous@cvs.ljms.sourceforge.net:/cvsroot/ljms co common </P>
+
+<P><BR>
+or any directory inside module common. For example, for checking out logmanager sources, do the following:</P>
+
+<P>cvs -z3 -d:pserver:anonymous@cvs.ljms.sourceforge.net:/cvsroot/ljms co common/src/org/is/logmanager <BR>
+(directories common/src/org/is will be created automatically) in your local directory.</P>
+
+<P>
+<H2>Developer CVS Access via SSH </H2>
+<P>Only project developers can access the CVS tree via this method. SSH1 must be installed on your client machine.
+Substitute developername with the proper value. Enter your site password when prompted. <BR>
+<BR>
+export CVS_RSH=ssh <BR>
+cvs -z3 -d:ext:developername@cvs.ljms.sourceforge.net:/cvsroot/ljms co common<BR>
+
+
+</BODY>
+
+</HTML>

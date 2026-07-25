@@ -1,0 +1,6 @@
+This is an example of GUI for multiservice server (Services management application). 
+
+Not completed. (There is no stopping of the service etc) although the core is 
+functional and will be completed soon. 
+
+Run it using start.bat or start.sh (X11)

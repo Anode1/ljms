@@ -1,0 +1,14 @@
+Gameserver is full-fledged production level multiplayer game server.
+Previous version supported loadbalancing (relay server) - see relay example.
+Currently this functionality has been switched off temporarily (after moving into JMS compliant
+messages relay package has to be updated).
+
+For running server either use scripts or run server from command line having server.jar 
+in CLASSPATH (it already contains both classes from this directory and necessary LJMS classes).
+
+For currently supported arguments which can be passed to the applications during 
+start just run "java Server -h" or "java Server -help" (one can change log directories, log files names, debug levels etc through arguments).
+
+For simple client one can run whiteboard (whiteboard package/example). Real production
+clients working with this server are not placed here.
+

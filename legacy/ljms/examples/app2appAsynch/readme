@@ -1,0 +1,61 @@
+app2appAsynch is the simplest case of LJMS usage for application - application
+communication (asynchronous message delivery) where one Java application acts as a client and another one - as the server only
+(so only one JVM here initiates message communication, although messages are
+going in 2 directions while connection is established and 2 message terminals
+(MessagePortal) are equal in rights: both can send messages while connection is alive
+and both can close connection: assymetry here is in who can initiate and who is
+waiting for a connection).
+P2P node application will rather have equal rights having both client and server
+parts in the same JVM, which means - it will instantiate either an instance
+of org.is.net.Servlet class (server part) and LSessionImpl subclass instance
+(connection initiating part of the broker).
+For extending this example to such P2P node base, one should add the following
+line (instantiating and starting the server part) to the client:
+  (new org.is.server.MessageServlet(new MessageRouter())).startService(port);
+and to write the necessary logic (what to do with Messages when they arrive).
+
+Notice that this example uses simple LSessionRunnableImpl vs LSessionImpl which has
+been used in the app2app example. 
+
+To run example:
+1.cd to the example directory;
+2.start runServer.sh under Unix or runServer.bat under Win
+3.start runClient.sh under Unix or runClient.bat under Win
+
+
+For brevity necessary code snippets from this example are here:
+
+SERVER:
+      Servlet server=new org.is.server.MessageServlet(new TrivialChatRouter());
+      server.startService(port);
+
+
+CLIENT:
+
+    LSessionRunnableImpl messageCentral;
+    
+    //INITIALIZE AND START THE BROKER:
+    try{
+      messageCentral=new LSessionRunnableImpl();
+      messageCentral.setMessageTransport(new MessageSocket(host, port));
+      messageCentral.setMessageListener(this);
+      messageCentral.setExceptionListener(this); //if not set - printing to console
+      messageCentral.connect();                  //make connection (init)
+      messageCentral.start();                    //start message delivery
+    }
+    catch(JMSException e){
+      System.err.println("Error connecting:"+e);
+    }
+    
+    ....
+    //USER CAN SEND MESSAGES FROM ANY PLACE/ANY TIME USING messageCentral (constructing any type of Message supported):
+
+    Message ms=new MessageImpl();
+    ms.setStringProperty("text",line);
+    messageCentral.sendMessage(ms);
+
+    ...
+
+    //FREE RESOURCES (close session at the end of the work with broker):
+    messageCentral.close();
+
