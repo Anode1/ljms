@@ -86,9 +86,9 @@ public class Processor {
 
     /**
      * How long a shutdown waits for the task in hand to finish. Past this the
-     * JVM stops anyway and the task's lease expires, so another worker will
-     * take it — keep it comfortably above a typical task, and keep queue.sh's
-     * own patience above this.
+     * worker hands the task back so another can take it at once, and stops.
+     * Set it to 0 to stop immediately and always hand back — cheaper if your
+     * tasks are long and safely repeatable. Keep queue.sh's patience above it.
      */
     public long shutdownWaitMs = 55000;
 
@@ -100,6 +100,9 @@ public class Processor {
 
     /** When the lease sweep last ran, so it runs on a timer, not per task. */
     private long lastRecovery;
+
+    /** The task being worked on right now, so a shutdown can release it. */
+    private volatile Task inFlight;
 
     /**
      * The lease token stamped on every row this worker takes:
@@ -242,6 +245,7 @@ public class Processor {
      * the row out of IN_PROCESS, or it would sit there until its lease expires.
      */
     void process(Task task) {
+        inFlight = task;
         try {
             log.info("Processing " + task);
 
@@ -283,6 +287,30 @@ public class Processor {
             // Let it die - but only now that the task is parked, so nothing
             // else dies on the same one.
             if (t instanceof Error) throw (Error) t;
+        }
+        finally {
+            inFlight = null;
+        }
+    }
+
+
+    /**
+     * Called by the shutdown hook once the wait has run out: hands back the
+     * task still in progress so another worker can take it immediately, rather
+     * than leaving it stranded for the rest of its lease.
+     */
+    private void releaseInFlight() {
+        Task task = inFlight;
+        if (task == null) return;
+        try {
+            if (queue.abandon(task.id, owner()) > 0) {
+                log.warning("Released id=" + task.id + " back to " + Queue.NEW
+                          + " - it was still running when this worker was stopped");
+            }
+        }
+        catch (Exception e) {
+            log.log(Level.WARNING, "Could not release id=" + task.id
+                  + "; it will wait out its lease instead", e);
         }
     }
 
@@ -338,8 +366,8 @@ public class Processor {
                     catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                     if (workerThread.isAlive()) {
                         log.warning("Task did not finish within " + worker.shutdownWaitMs
-                                  + " ms; stopping anyway. Its lease will expire and another "
-                                  + "worker will take it — make sure it is idempotent.");
+                                  + " ms; stopping anyway.");
+                        worker.releaseInFlight();
                     }
                 }
             });

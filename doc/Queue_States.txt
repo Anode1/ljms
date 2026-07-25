@@ -23,12 +23,13 @@ Diagram (edge list; ^ = happens without anyone asking):
   NEW         --take-->       IN_PROCESS
   IN_PROCESS  --done-->      DONE           [terminal]
   IN_PROCESS  --error-->     ERROR
+  IN_PROCESS  --release-->   NEW            (worker shut down before finishing)
   IN_PROCESS  --^expire-->   NEW            (lease ran out; worker presumed dead)
   ERROR       --restart-->   NEW            (operator restarts the worker)
 
 Character form (STATE = target[event]):
   NEW         = start | IN_PROCESS[take]
-  IN_PROCESS  = DONE[done] | ERROR[error] | NEW[^expire]
+  IN_PROCESS  = DONE[done] | ERROR[error] | NEW[release] | NEW[^expire]
   ERROR       = NEW[restart]
   DONE        = terminal
 
@@ -48,14 +49,22 @@ Queue.java names it too. That is deliberate, but it means "add a state and it
 is checked automatically" is only true once the code agrees.
 
 What the graph checks cannot see (the liveness argument, by hand):
-  The machine has two cycles, NEW -> IN_PROCESS -> NEW (^expire) and
-  NEW -> IN_PROCESS -> ERROR -> NEW (restart). Neither can spin, because
-  neither edge fires on its own:
+  The machine has cycles: NEW -> IN_PROCESS -> NEW, by release or by ^expire,
+  and NEW -> IN_PROCESS -> ERROR -> NEW by restart. None can spin, because no
+  edge in them fires on its own:
+  - release needs the worker to be shut down mid-task. Something outside has
+    to send the signal.
   - ^expire needs a worker to die mid-task. A worker that keeps dying is a
     worker that is down, not a loop.
   - restart is an operator action. Nothing in the code triggers it.
   There is deliberately no automatic retry edge, which is what would make
   IN_PROCESS -> NEW self-sustaining.
+
+  Note this argument only holds because an Error out of the work is caught and
+  parked in ERROR before the worker dies. Left uncaught, one poison task would
+  keep its lease, return to NEW as the head of the queue, and kill each worker
+  in turn - a genuine self-sustaining loop that the graph checks cannot see.
+  See invariant 5 in development.txt.
 
 Nothing is ever locked (the rule that keeps this scalable):
   Every transition is one predicated single-row UPDATE under autocommit. The
@@ -92,6 +101,21 @@ Why no automatic retries:
 
   ERROR being terminal is also what keeps a bad task from stalling the queue:
   the worker records it and moves on to the next task rather than stopping.
+
+Why a stopping worker releases its task, instead of leaving it to the lease:
+  The ancestor of this queue terminated the task immediately on shutdown and
+  relied on the restart to pick it up again: recovery there was owner-scoped,
+  so the same worker reclaimed its own in-flight rows the moment it came back.
+  That is a good policy and it does not survive the move to lease-based
+  recovery — with the lease as the only way out of IN_PROCESS, an ordinary
+  deliberate stop would leave the task untouchable for the rest of the lease,
+  half an hour by default.
+
+  So the departing worker hands the task back itself (release). That keeps the
+  ancestor's property — a stop costs nothing — without reintroducing its
+  requirement that node ids be unique and stable, since nothing has to work out
+  whose row it was. The lease is then left doing only the job it is uniquely
+  good at: the worker that never comes back to explain itself.
 
 Why recovery is by lease and not by owner:
   A claim sets lease_until; a row still IN_PROCESS past its lease is presumed

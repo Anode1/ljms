@@ -64,14 +64,14 @@ The operations are `put`, `take`, `done`, `error`. The first two are the names `
 
 ```
 NEW        = start | IN_PROCESS[take]
-IN_PROCESS = DONE[done] | ERROR[error] | NEW[^expire]
+IN_PROCESS = DONE[done] | ERROR[error] | NEW[release] | NEW[^expire]
 ERROR      = NEW[restart]
 DONE       = terminal
 ```
 
 That block in [`doc/Queue_States.txt`](doc/Queue_States.txt) is the specification, not a description of the code, and `ant prove` parses it and checks six properties of the graph: a start state exists, every state is reachable from start, every non-terminal has a way out, terminals are sinks, no `(state, event)` pair maps to two targets, and some path reaches a terminal. It needs no database and runs in about 25 ms.
 
-Two limits on what that buys. It checks that a four-node graph is **well formed** — it does not verify that the SQL implements those edges and no others; that is what the behaviour tests are for. And it cannot see liveness: the machine has cycles (`NEW → IN_PROCESS → NEW` on lease expiry, `ERROR → NEW` on restart), and reachability says nothing about termination. That argument is made by hand in the doc, and it rests on neither edge firing by itself.
+Two limits on what that buys. It checks that the graph is **well formed** — it does not verify that the SQL implements those edges and no others; that is what the behaviour tests are for. And it cannot see liveness: the machine has cycles (`NEW → IN_PROCESS → NEW` on release or lease expiry, `ERROR → NEW` on restart), and reachability says nothing about termination. That argument is made by hand in the doc, and it rests on neither edge firing by itself.
 
 ## Why
 
@@ -92,6 +92,8 @@ That is what lets worker count grow: contention costs wasted attempts rather tha
 **No automatic retries.** A failed task goes to `ERROR` and stays there: one failure, one log line, one row. A retry loop multiplies a single problem across the log and hides how many distinct problems there are. Restarting the worker is the retry — startup returns that worker's `ERROR` rows to `NEW`, on the assumption someone restarted it because they fixed the cause. Meanwhile the queue flows past a parked task instead of stalling on it.
 
 **Recovery is by lease, not by owner.** Taking a task sets `lease_until`; a row still `IN_PROCESS` past its lease is returned to `NEW` by whichever worker notices. One timestamp comparison, and it covers three cases owner-matching does not: a dead worker's tasks come back without that host returning under the same name; two workers sharing a node id cannot take each other's in-flight rows; and when the *database* is what failed, a worker cannot write "put me back" anywhere.
+
+**A deliberate stop does not strand a task.** Shutdown asks the worker to finish what it is doing and waits; if the task is still running when the wait runs out, the worker hands it back before exiting, so another worker can take it at once rather than after the rest of its lease. Only a worker that dies without warning leaves a task to lease expiry.
 
 **Delivery is at-least-once.** A worker that is slow rather than dead can lose its lease and have its task run twice. Make tasks idempotent, or fence them with `extendLease()`, which returns false once the lease is gone. No queue with a network in it can offer exactly-once.
 
@@ -188,7 +190,7 @@ Both drop and recreate the table on every run — point them at a database you d
 
 ## History
 
-The first LJMS, in 2001, was a small open-source library with an in-memory queue. Different mechanism — the queue lived in the process — but the same idea: a unit of work carries its own state, and whichever worker is free takes the next one. The name is a nod to JMS, which it postdates by some years.
+The first LJMS, in 2001, was a small open-source library implementing the JMS interface over an in-memory queue — hence the name. Different mechanism from this one, since the queue lived in the process and did not survive a restart, but the same idea underneath: a unit of work carries its own state, and whichever worker is free takes the next one.
 
 The idea has since carried four production systems, and this is the fourth pass at it: the one that moves the queue into a table, where it outlives the process. The direct ancestor has been running Ontario health-facility submissions for over fifteen years, and a sibling has run hospital ML pipelines for five.
 

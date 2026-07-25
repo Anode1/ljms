@@ -325,6 +325,45 @@ public class QueueDAO {
     // ------------------------------------------------------------------
 
     /**
+     * IN_PROCESS -&gt; NEW for one task, immediately: the worker holding it is
+     * being shut down and will not finish it.
+     *
+     * Without this, a deliberate stop mid-task would leave the row unavailable
+     * for the whole remaining lease — half an hour by default — because lease
+     * expiry is the only other way out of IN_PROCESS. A worker that knows it is
+     * leaving can say so, and the task is takeable again at once.
+     *
+     * The ownership guard means a task that turns out to finish anyway cannot
+     * then overwrite this: its done() matches nothing. It may, of course,
+     * already have run — that is at-least-once, and it is what lease expiry
+     * would have done later regardless.
+     *
+     * @return 0 if we no longer held it
+     */
+    public int abandon(long id, String owner) throws Exception {
+        Connection con = null;
+        PreparedStatement ps = null;
+        try {
+            con = open();
+            String q =
+                    "UPDATE " + table +
+                    "   SET status = ?, owner = NULL, started = NULL, lease_until = NULL, " +
+                    "       error = 'released - worker shut down before finishing' " +
+                    " WHERE id = ? AND owner = ? AND status = ?";
+            ps = con.prepareStatement(q);
+            ps.setString(1, Queue.NEW);
+            ps.setLong(2, id);
+            ps.setString(3, owner);
+            ps.setString(4, Queue.IN_PROCESS);
+            return ps.executeUpdate();
+        }
+        finally {
+            if (ps != null) try { ps.close(); } catch (Exception ignore) {}
+            if (con != null) try { con.close(); } catch (Exception ignore) {}
+        }
+    }
+
+    /**
      * IN_PROCESS -&gt; NEW for every row whose lease has run out: the worker
      * holding it died, hung, or lost the database. Owner-independent, so the
      * next worker to run this recovers it — no waiting for the dead one.

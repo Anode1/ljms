@@ -6,7 +6,7 @@ package org.ljms;
  *
  * <pre>
  *   NEW        = start | IN_PROCESS[take]
- *   IN_PROCESS = DONE[done] | ERROR[error] | NEW[^expire]
+ *   IN_PROCESS = DONE[done] | ERROR[error] | NEW[release] | NEW[^expire]
  *   ERROR      = NEW[restart]
  *   DONE       = terminal
  * </pre>

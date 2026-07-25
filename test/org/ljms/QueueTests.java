@@ -236,6 +236,39 @@ public class QueueTests extends TestCase {
     }
 
     /**
+     * A worker being shut down hands its task back at once, rather than
+     * leaving it stranded for the rest of its lease.
+     *
+     * The ancestor of this design killed the task immediately and relied on the
+     * restart to reclaim it, which worked because recovery there was scoped to
+     * the owner. With lease-based recovery that policy would cost a full lease
+     * of latency on every ordinary stop, so the departing worker says so.
+     */
+    public void testAbandonReturnsATaskImmediately() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+        queue.take(OWNER, NODE, LEASE);
+
+        assertEquals(1, queue.abandon(id, OWNER));
+        assertEquals(Queue.NEW, col(id, "status"));
+        assertNull("and it holds no lease, so it is takeable now", col(id, "lease_until"));
+
+        Task task = queue.take("someone-else 2026-01-01 00:00:00.000", "someone-else", LEASE);
+        assertNotNull("another worker can take it straight away, not in 30 minutes", task);
+        assertEquals(id, task.id);
+    }
+
+    /** Only the holder can hand a task back. */
+    public void testAbandonFromTheWrongOwnerIsANoOp() throws Exception {
+
+        long id = queue.put(TYPE, 0L, null);
+        queue.take(OWNER, NODE, LEASE);
+
+        assertEquals(0, queue.abandon(id, "impostor 2026-01-01 00:00:00.000"));
+        assertEquals(Queue.IN_PROCESS, col(id, "status"));
+    }
+
+    /**
      * A worker that dies mid-task leaves its row IN_PROCESS. Recovery is by
      * lease expiry, so any worker frees it — no waiting for the dead one to
      * come back — and a live lease is never disturbed.
