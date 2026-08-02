@@ -4,7 +4,7 @@ A tiny, dependency-free work queue that gives a web application the one thing it
 
 ![A deck of punch cards, one lifted clear of the stack](doc/img/job_queue.png)
 
-A request cannot wait for a report to render or a model to run, so the work has to go somewhere and something has to pick it up. The usual answer is a broker: a service to install, secure, monitor, back up and upgrade, holding a second copy of your state where you cannot join it against your own data. `ljms` is one table in the database you already have, and a loop that polls it. Everything under it is the boring, proven part: a status column, an owner, a lease, and four state names you can read straight out of a `SELECT`. No broker, no dependencies beyond the JDK and a JDBC driver. There is a worker process, but it is your own JVM running your own code, in-process, from cron or under systemd, rather than a service you have to operate. None of it is new: it is essentially a JES job queue on z/OS, an operator's spool of work held as data rather than as process memory, pointed at web applications instead of batch decks.
+A request cannot wait for a report to render or a model to run, so the work has to go somewhere and something has to pick it up. The usual answer is a broker: a service to install, secure, monitor, back up and upgrade, holding a second copy of your state where you cannot join it against your own data. `ljms` is one table in the database you already have, and a loop that polls it. Everything under it is the boring, proven part: a status column, an owner, a lease, and four state names you can read straight out of a `SELECT`. No broker, no dependencies beyond the JDK and a JDBC driver. There is a worker process, but it is your own JVM running your own code, in-process, from cron or under systemd, rather than a service you have to operate. The shape is proven: it is essentially a JES job queue on z/OS, an operator's spool of work held as data rather than as process memory, pointed at web applications instead of batch decks.
 
 Some of this the word does by itself. "Queue" has come to name a category of product rather than a shape of data, so "we need a queue" tends to get answered with something you install rather than something you declare. Nobody sets out to over-build. It is just that once the question is which queue, the smallest answer on the shelf is already a service.
 
@@ -287,14 +287,14 @@ The second column is not a real pool, one connection per thread, never returned,
 
 ## Status
 
-Read this before depending on it. The *design* has a long history; this implementation does not.
+Read this before depending on it.
 
 - Tested against **MySQL only**. The PostgreSQL, Oracle and SQL Server dialects are transcribed from documentation and have never been run. If you run one, please say so.
 - **CI proves the state machine, not the behaviour.** `ant` and `ant prove` run on
   every push ([`.github/workflows/prove.yml`](.github/workflows/prove.yml)), checking
   the code against `doc/Queue_States.txt` with no database. The behaviour tests still
   need one, and which one is your decision, so they do not run here.
-- As published, **this code has not run in production.** Its ancestors have. The lease, the portable SQL, the specification and the tests are all new here, which is to say, the parts most likely to be wrong are the new ones.
+- **The newest parts are the likeliest to be wrong.** The lease, the portable SQL, the specification and the tests are new in this implementation; the shape they implement is not.
 - Oracle needs one source edit beyond the dialect: its JDBC driver wants the generated-key column named. See `sql/oracle.sql`.
 - `lib/junit.jar` is JUnit 3.8, CPL-licensed, used by the tests only. Nothing in `src/` depends on it.
 
