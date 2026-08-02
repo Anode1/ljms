@@ -8,7 +8,7 @@ A request cannot wait for a report to render or a model to run, so the work has 
 
 Some of this the word does by itself. "Queue" has come to name a category of product rather than a shape of data, so "we need a queue" tends to get answered with something you install rather than something you declare. Nobody sets out to over-build. It is just that once the question is which queue, the smallest answer on the shelf is already a service.
 
-This isn't a messaging idea; it's an **optimistic locking** idea. Anyone who has written lock-free code knows the shape: do not take a lock, read a value and swap in a new one only if it has not changed since, and if somebody beat you to it, read again. `UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is that compare-and-swap, and the affected-row count is its answer. Contention costs a wasted attempt rather than a blocked worker, which is why you can add workers without them queueing behind each other. `ljms` is that one instinct, applied to a table.
+Anyone who has written lock-free code will recognise the shape on sight. You do not take a lock: you read a value, swap in a new one only if it has not changed since, and if somebody beat you to it you read again. That is **optimistic locking**, and it is what makes this a queue rather than a table with a status column. `UPDATE queue SET status='IN_PROCESS' WHERE id=? AND status='NEW'` is that compare-and-swap, and the affected-row count is its answer. Contention costs a wasted attempt rather than a blocked worker, which is why you can add workers without them queueing behind each other. `ljms` is that one instinct, applied to a table.
 
 ```
 COMPARE-AND-SWAP  (concurrent code)       OPTIMISTIC LOCKING  (any database)
