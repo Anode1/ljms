@@ -290,10 +290,9 @@ The second column is not a real pool, one connection per thread, never returned,
 Read this before depending on it.
 
 - Tested against **MySQL only**. The PostgreSQL, Oracle and SQL Server dialects are transcribed from documentation and have never been run. If you run one, please say so.
-- **CI proves the state machine, not the behaviour.** `ant` and `ant prove` run on
-  every push ([`.github/workflows/prove.yml`](.github/workflows/prove.yml)), checking
-  the code against `doc/Queue_States.txt` with no database. The behaviour tests still
-  need one, and which one is your decision, so they do not run here.
+- **No CI.** The behaviour tests need a database and which one is your decision.
+  `ant prove` needs none and takes 25 ms, so run it yourself; a template should not
+  hand every project that copies it a CI config it did not ask for.
 - **The newest parts are the likeliest to be wrong.** The lease, the portable SQL, the specification and the tests are new in this implementation; the shape they implement is not.
 - Oracle needs one source edit beyond the dialect: its JDBC driver wants the generated-key column named. See `sql/oracle.sql`.
 - `lib/junit.jar` is JUnit 3.8, CPL-licensed, used by the tests only. Nothing in `src/` depends on it.
